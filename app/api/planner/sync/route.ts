@@ -46,15 +46,33 @@ async function resolvePlanId(token: string): Promise<string> {
   return findPlanId(token, groupId);
 }
 
-async function getFirstBucketId(token: string, planId: string): Promise<string> {
+async function findOrCreateBucket(
+  token: string,
+  planId: string,
+  bucketName: string,
+  bucketCache: Map<string, string>
+): Promise<string> {
+  if (bucketCache.has(bucketName)) return bucketCache.get(bucketName)!;
+
   const data = (await graphGet(token, `/planner/plans/${planId}/buckets`)) as {
-    value: { id: string }[];
+    value: { id: string; name: string }[];
   };
 
-  if (!data.value?.length) {
-    throw new Error("Plan дотор bucket олдсонгүй");
+  const existing = (data.value ?? []).find((b) => b.name === bucketName);
+  if (existing) {
+    bucketCache.set(bucketName, existing.id);
+    return existing.id;
   }
-  return data.value[0].id;
+
+  // Bucket байхгүй бол шинээр үүсгэнэ
+  const created = (await graphPost(token, "/planner/buckets", {
+    name: bucketName,
+    planId,
+    orderHint: " !",
+  })) as { id: string };
+
+  bucketCache.set(bucketName, created.id);
+  return created.id;
 }
 
 async function findMsUserId(token: string, email: string): Promise<string | null> {
@@ -100,9 +118,11 @@ export async function POST(req: NextRequest) {
     // 1. MS token авах
     const token = await getMsToken();
 
-    // 2. Group → Plan → Bucket ID олох
+    // 2. Group → Plan ID олох
     const planId = await resolvePlanId(token);
-    const bucketId = await getFirstBucketId(token, planId);
+
+    // Bucket cache — нэг л удаа API дуудна
+    const bucketCache = new Map<string, string>();
 
     const results: SyncResult[] = [];
 
@@ -123,6 +143,10 @@ export async function POST(req: NextRequest) {
         const assignments: Record<string, unknown> = {};
         const participantNames: string[] = ticket.participants ?? [];
         const participantLabel = participantNames.join(", ") || null;
+
+        // Эхний participant-ийн нэрийг bucket болгоно
+        const bucketName = participantNames[0] ?? "Unassigned";
+        const bucketId = await findOrCreateBucket(token, planId, bucketName, bucketCache);
 
         for (const pName of participantNames) {
           const pInfo = PARTICIPANTS.find((p) => p.displayName === pName);
