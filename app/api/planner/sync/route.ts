@@ -171,7 +171,8 @@ export async function POST(req: NextRequest) {
         const noteText = `Jira холбоос: ${jiraUrl}\n\n${descText}`.trim();
 
         // Task үүсгэх
-        const titleSuffix = participantLabel ? ` --> ${participantLabel}` : "";
+        const titleSuffix = participantLabel ? `` : "";
+        // const titleSuffix = participantLabel ? ` --> ${participantLabel}` : "";
         const taskPayload: Record<string, unknown> = {
           planId,
           bucketId,
