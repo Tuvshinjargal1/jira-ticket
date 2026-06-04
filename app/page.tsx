@@ -5,7 +5,7 @@ import {
   Sun, Moon, ClipboardList, BarChart3,
   MessageSquare, Eye, Send,
   CheckCircle2, SkipForward, XCircle,
-  Users, CheckCheck,
+  Users, CheckCheck, User, CalendarCheck2,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -56,22 +56,37 @@ function TicketRow({
   showParticipants,
   isChecked,
   onToggle,
+  plannerStatus,
 }: {
   ticket: JiraTicket & { participants?: string[] };
   showParticipants: boolean;
   isChecked: boolean;
   onToggle: (key: string) => void;
+  plannerStatus: string | undefined;
 }) {
   const f = ticket.fields;
   const created = new Date(f.created).toLocaleDateString("mn-MN");
   const participants = ticket.participants ?? [];
+  const isSynced = !!plannerStatus;
+
+  const rowBg = isChecked
+    ? isSynced
+      ? "bg-teal-100 hover:bg-teal-200"
+      : "bg-blue-50 hover:bg-blue-100"
+    : isSynced
+    ? "bg-emerald-50 hover:bg-emerald-100"
+    : "hover:bg-slate-50";
+
+  const PLANNER_STATUS_STYLES: Record<string, string> = {
+    "Completed": "text-slate-500 bg-slate-100 border-slate-200",
+    "In Progress": "text-blue-700 bg-blue-100 border-blue-200",
+    "Not Started": "text-emerald-700 bg-emerald-100 border-emerald-200",
+  };
 
   return (
     <tr
       onClick={() => onToggle(ticket.key)}
-      className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${
-        isChecked ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-slate-50"
-      }`}
+      className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${rowBg}`}
     >
       <td className="py-3 px-3">
         <input
@@ -83,20 +98,33 @@ function TicketRow({
         />
       </td>
       <td className="py-3 px-3">
-        <a
-          href={`https://zerotech.atlassian.net/browse/${ticket.key}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="font-mono text-xs text-blue-600 hover:underline"
-        >
-          {ticket.key}
-        </a>
+        <div className="flex flex-col gap-1 items-start">
+          <a
+            href={`https://zerotech.atlassian.net/browse/${ticket.key}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="font-mono text-xs text-blue-600 hover:underline"
+          >
+            {ticket.key}
+          </a>
+          {isSynced && plannerStatus && (
+            <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold border px-1.5 py-0.5 rounded-full whitespace-nowrap ${PLANNER_STATUS_STYLES[plannerStatus] ?? "text-emerald-700 bg-emerald-100 border-emerald-200"}`}>
+              <CalendarCheck2 className="w-3 h-3" /> {plannerStatus}
+            </span>
+          )}
+        </div>
       </td>
       <td className="py-3 px-3 max-w-xs">
         <div className="flex flex-col gap-1">
           <span className="text-slate-800 text-sm line-clamp-2">{f.summary}</span>
-          {showParticipants && participants.length > 1 && (
+          {f.assignee && (
+            <span className="inline-flex items-center gap-1 text-xs text-slate-500 font-medium">
+              <User className="w-3 h-3 text-slate-400" />
+              {f.assignee.displayName}
+            </span>
+          )}
+          {showParticipants && participants.length > 0 && (
             <span className="inline-flex items-center gap-1 text-xs text-violet-600 font-medium">
               <Users className="w-3 h-3" />
               {participants.join(", ")}
@@ -127,12 +155,14 @@ function TicketTable({
   selected,
   onToggleOne,
   onToggleAll,
+  plannerStatusMap,
 }: {
   tickets: (JiraTicket & { participants?: string[] })[];
   showParticipants: boolean;
   selected: Set<string>;
   onToggleOne: (key: string) => void;
   onToggleAll: (keys: string[]) => void;
+  plannerStatusMap: Map<string, string>;
 }) {
   const keys = tickets.map((t) => t.key);
   const allChecked = keys.length > 0 && keys.every((k) => selected.has(k));
@@ -192,6 +222,7 @@ function TicketTable({
                 showParticipants={showParticipants}
                 isChecked={selected.has(ticket.key)}
                 onToggle={onToggleOne}
+                plannerStatus={plannerStatusMap.get(ticket.key)}
               />
             ))}
           </tbody>
@@ -434,6 +465,7 @@ export default function Home() {
     skipped: number;
     errors: number;
   } | null>(null);
+  const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, string>>(new Map());
 
   const hasData = allTickets.length > 0;
 
@@ -444,14 +476,28 @@ export default function Home() {
     setResults(null);
     setSummary(null);
     setSelected(new Set());
+    setPlannerStatusMap(new Map());
     setActiveTab("all");
 
     try {
-      const res = await fetch("/api/jira/tickets");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Ticket татахад алдаа гарлаа");
+      const [jiraRes, plannerRes] = await Promise.all([
+        fetch("/api/jira/tickets"),
+        fetch("/api/planner/tasks"),
+      ]);
+      const data = await jiraRes.json();
+      if (!jiraRes.ok) throw new Error(data.error ?? "Ticket татахад алдаа гарлаа");
       setAllTickets(data.allTickets ?? []);
       setByPerson(data.byPerson ?? []);
+
+      // Planner-д аль хэдийн байгаа task-уудыг тэмдэглэнэ
+      if (plannerRes.ok) {
+        const plannerData = await plannerRes.json();
+        const map = new Map<string, string>();
+        for (const t of (plannerData.tasks ?? [])) {
+          map.set(t.key, t.status);
+        }
+        setPlannerStatusMap(map);
+      }
     } catch (e: unknown) {
       setFetchError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -495,11 +541,21 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync хийхэд алдаа гарлаа");
-      setResults(data.results ?? []);
+      const syncResults: SyncResult[] = data.results ?? [];
+      setResults(syncResults);
       setSummary({
         created: data.created,
         skipped: data.skipped,
         errors: data.errors,
+      });
+      setPlannerStatusMap((prev) => {
+        const next = new Map(prev);
+        syncResults
+          .filter((r) => r.status === "created" || r.status === "skipped")
+          .forEach((r) => {
+            if (!next.has(r.key)) next.set(r.key, "Not Started");
+          });
+        return next;
       });
     } catch (e: unknown) {
       setSyncError(e instanceof Error ? e.message : String(e));
@@ -634,6 +690,7 @@ export default function Home() {
               selected={selected}
               onToggleOne={toggleOne}
               onToggleAll={toggleGroup}
+              plannerStatusMap={plannerStatusMap}
             />
           </div>
         )}
