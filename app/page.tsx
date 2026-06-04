@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Sun, Moon, ClipboardList, BarChart3,
   MessageSquare, Eye, Send,
@@ -505,6 +505,9 @@ export default function Home() {
     }
   }, []);
 
+  // Хуудсанэ ачаахд шууд ачаах
+  useEffect(() => { loadTickets(); }, [loadTickets]);
+
   // ── Selection ──
   const toggleOne = (key: string) => {
     setSelected((prev) => {
@@ -590,20 +593,12 @@ export default function Home() {
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         {/* Controls */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={loadTickets}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? (
-              <>
-                <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                Татаж байна…
-              </>
-            ) : (
-              "Jira ticket татах"
-            )}
-          </button>
+          {loading && (
+            <span className="inline-flex items-center gap-2 text-sm text-slate-500">
+              <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
+              Татаж байна…
+            </span>
+          )}
 
           {hasData && (
             <button
