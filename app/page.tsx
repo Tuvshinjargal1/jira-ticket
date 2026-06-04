@@ -568,10 +568,13 @@ export default function Home() {
   };
 
   // ── Current tab tickets ──
-  const currentTickets: (JiraTicket & { participants?: string[] })[] =
+  const currentTickets = (
     activeTab === "all"
       ? allTickets
-      : (byPerson.find((p) => p.email === activeTab)?.tickets ?? []);
+      : (byPerson.find((p) => p.email === activeTab)?.tickets ?? [])
+  ).slice().sort((a, b) =>
+    new Date(b.fields.created).getTime() - new Date(a.fields.created).getTime()
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
