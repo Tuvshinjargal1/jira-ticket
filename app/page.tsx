@@ -5,7 +5,8 @@ import {
   Sun, Moon, ClipboardList, BarChart3,
   MessageSquare, Eye, Send,
   CheckCircle2, SkipForward, XCircle,
-  Users, CheckCheck, User, CalendarCheck2,
+  Users, CheckCheck, User,
+  ChevronDown, ChevronRight,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -50,24 +51,35 @@ function Badge({
   );
 }
 
+const PLANNER_STATUSES = ["Not Started", "In Progress", "Completed"] as const;
+type PlannerStatus = typeof PLANNER_STATUSES[number];
+
+const PLANNER_STATUS_STYLES: Record<string, string> = {
+  "Completed":   "text-slate-500  bg-slate-100  border-slate-200",
+  "In Progress": "text-blue-700   bg-blue-100   border-blue-200",
+  "Not Started": "text-emerald-700 bg-emerald-100 border-emerald-200",
+};
+
 // ── Single ticket row ─────────────────────────────────────────────────────────
 function TicketRow({
   ticket,
   showParticipants,
   isChecked,
   onToggle,
-  plannerStatus,
+  plannerInfo,
+  onStatusChange,
 }: {
   ticket: JiraTicket & { participants?: string[] };
   showParticipants: boolean;
   isChecked: boolean;
   onToggle: (key: string) => void;
-  plannerStatus: string | undefined;
+  plannerInfo: { status: string; taskId: string } | undefined;
+  onStatusChange: (key: string, taskId: string, newStatus: string) => void;
 }) {
   const f = ticket.fields;
   const created = new Date(f.created).toLocaleDateString("mn-MN");
   const participants = ticket.participants ?? [];
-  const isSynced = !!plannerStatus;
+  const isSynced = !!plannerInfo;
 
   const rowBg = isChecked
     ? isSynced
@@ -76,12 +88,6 @@ function TicketRow({
     : isSynced
     ? "bg-emerald-50 hover:bg-emerald-100"
     : "hover:bg-slate-50";
-
-  const PLANNER_STATUS_STYLES: Record<string, string> = {
-    "Completed": "text-slate-500 bg-slate-100 border-slate-200",
-    "In Progress": "text-blue-700 bg-blue-100 border-blue-200",
-    "Not Started": "text-emerald-700 bg-emerald-100 border-emerald-200",
-  };
 
   return (
     <tr
@@ -108,10 +114,20 @@ function TicketRow({
           >
             {ticket.key}
           </a>
-          {isSynced && plannerStatus && (
-            <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold border px-1.5 py-0.5 rounded-full whitespace-nowrap ${PLANNER_STATUS_STYLES[plannerStatus] ?? "text-emerald-700 bg-emerald-100 border-emerald-200"}`}>
-              <CalendarCheck2 className="w-3 h-3" /> {plannerStatus}
-            </span>
+          {isSynced && plannerInfo && (
+            <select
+              value={plannerInfo.status}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                onStatusChange(ticket.key, plannerInfo.taskId, e.target.value);
+              }}
+              className={`inline-flex items-center text-[10px] font-semibold border px-1.5 py-0.5 rounded-full cursor-pointer appearance-none outline-none ${PLANNER_STATUS_STYLES[plannerInfo.status] ?? "text-emerald-700 bg-emerald-100 border-emerald-200"}`}
+            >
+              {PLANNER_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           )}
         </div>
       </td>
@@ -156,22 +172,47 @@ function TicketTable({
   onToggleOne,
   onToggleAll,
   plannerStatusMap,
+  onStatusChange,
 }: {
   tickets: (JiraTicket & { participants?: string[] })[];
   showParticipants: boolean;
   selected: Set<string>;
   onToggleOne: (key: string) => void;
   onToggleAll: (keys: string[]) => void;
-  plannerStatusMap: Map<string, string>;
+  plannerStatusMap: Map<string, { status: string; taskId: string }>;
+  onStatusChange: (key: string, taskId: string, newStatus: string) => void;
 }) {
-  const keys = tickets.map((t) => t.key);
+  const [completedOpen, setCompletedOpen] = useState(false);
+
+  const activeTickets = tickets.filter(
+    (t) => plannerStatusMap.get(t.key)?.status !== "Completed"
+  );
+  const completedTickets = tickets.filter(
+    (t) => plannerStatusMap.get(t.key)?.status === "Completed"
+  );
+
+  const keys = activeTickets.map((t) => t.key);
   const allChecked = keys.length > 0 && keys.every((k) => selected.has(k));
   const someChecked = keys.some((k) => selected.has(k)) && !allChecked;
+
+  const tableHead = (
+    <thead className="bg-slate-50">
+      <tr>
+        <th className="w-10 py-2 px-3" />
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Key</th>
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Гарчиг</th>
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Assignee</th>
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Статус</th>
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Эрэмбэ</th>
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Огноо</th>
+      </tr>
+    </thead>
+  );
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-        <span className="text-sm text-slate-500">{tickets.length} ticket</span>
+        <span className="text-sm text-slate-500">{activeTickets.length} ticket</span>
         <button
           onClick={() => onToggleAll(keys)}
           className="text-xs text-blue-600 hover:underline"
@@ -194,40 +235,70 @@ function TicketTable({
                   className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
                 />
               </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Key
-              </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Гарчиг
-              </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Assignee
-              </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Статус
-              </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Эрэмбэ
-              </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Огноо
-              </th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Key</th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Гарчиг</th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Assignee</th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Статус</th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Эрэмбэ</th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Огноо</th>
             </tr>
           </thead>
           <tbody>
-            {tickets.map((ticket) => (
+            {activeTickets.map((ticket) => (
               <TicketRow
                 key={ticket.key}
                 ticket={ticket}
                 showParticipants={showParticipants}
                 isChecked={selected.has(ticket.key)}
                 onToggle={onToggleOne}
-                plannerStatus={plannerStatusMap.get(ticket.key)}
+                plannerInfo={plannerStatusMap.get(ticket.key)}
+                onStatusChange={onStatusChange}
               />
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Completed tickets collapsible section */}
+      {completedTickets.length > 0 && (
+        <div className="border-t border-slate-200">
+          <button
+            onClick={() => setCompletedOpen((v) => !v)}
+            className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+          >
+            {completedOpen ? (
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+            )}
+            <CheckCircle2 className="w-4 h-4 text-slate-400" />
+            <span>Дууссан таскууд</span>
+            <span className="ml-1 text-xs bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 font-normal">
+              {completedTickets.length}
+            </span>
+          </button>
+          {completedOpen && (
+            <div className="overflow-x-auto border-t border-slate-100">
+              <table className="w-full text-sm opacity-70">
+                {tableHead}
+                <tbody>
+                  {completedTickets.map((ticket) => (
+                    <TicketRow
+                      key={ticket.key}
+                      ticket={ticket}
+                      showParticipants={showParticipants}
+                      isChecked={selected.has(ticket.key)}
+                      onToggle={onToggleOne}
+                      plannerInfo={plannerStatusMap.get(ticket.key)}
+                      onStatusChange={onStatusChange}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -465,7 +536,7 @@ export default function Home() {
     skipped: number;
     errors: number;
   } | null>(null);
-  const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, string>>(new Map());
+  const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, { status: string; taskId: string }>>(new Map());
 
   const hasData = allTickets.length > 0;
 
@@ -492,9 +563,9 @@ export default function Home() {
       // Planner-д аль хэдийн байгаа task-уудыг тэмдэглэнэ
       if (plannerRes.ok) {
         const plannerData = await plannerRes.json();
-        const map = new Map<string, string>();
+        const map = new Map<string, { status: string; taskId: string }>();
         for (const t of (plannerData.tasks ?? [])) {
-          map.set(t.key, t.status);
+          map.set(t.key, { status: t.status, taskId: t.taskId ?? "" });
         }
         setPlannerStatusMap(map);
       }
@@ -551,19 +622,64 @@ export default function Home() {
         skipped: data.skipped,
         errors: data.errors,
       });
-      setPlannerStatusMap((prev) => {
-        const next = new Map(prev);
-        syncResults
-          .filter((r) => r.status === "created" || r.status === "skipped")
-          .forEach((r) => {
-            if (!next.has(r.key)) next.set(r.key, "Not Started");
-          });
-        return next;
-      });
+      // Sync дууссаны дараа taskId-г авахын тулд planner task-уудыг дахин татна
+      const refreshRes = await fetch("/api/planner/tasks");
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json();
+        setPlannerStatusMap((prev) => {
+          const next = new Map(prev);
+          for (const t of (refreshData.tasks ?? [])) {
+            next.set(t.key, { status: t.status, taskId: t.taskId ?? "" });
+          }
+          return next;
+        });
+      } else {
+        setPlannerStatusMap((prev) => {
+          const next = new Map(prev);
+          syncResults
+            .filter((r) => r.status === "created" || r.status === "skipped")
+            .forEach((r) => {
+              if (!next.has(r.key)) next.set(r.key, { status: "Not Started", taskId: "" });
+            });
+          return next;
+        });
+      }
     } catch (e: unknown) {
       setSyncError(e instanceof Error ? e.message : String(e));
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // ── Planner status change ──
+  const handleStatusChange = async (key: string, taskId: string, newStatus: string) => {
+    if (!taskId) return;
+    // Optimistically update UI
+    setPlannerStatusMap((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(key);
+      if (cur) next.set(key, { ...cur, status: newStatus });
+      return next;
+    });
+    try {
+      const res = await fetch("/api/planner/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, status: newStatus }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        // Rollback on error
+        setPlannerStatusMap((prev) => {
+          const next = new Map(prev);
+          const cur = next.get(key);
+          if (cur) next.set(key, { ...cur, status: cur.status });
+          return next;
+        });
+        console.error("Status солиход алдаа:", data.error);
+      }
+    } catch (e) {
+      console.error("Status солиход алдаа:", e);
     }
   };
 
@@ -689,6 +805,7 @@ export default function Home() {
               onToggleOne={toggleOne}
               onToggleAll={toggleGroup}
               plannerStatusMap={plannerStatusMap}
+              onStatusChange={handleStatusChange}
             />
           </div>
         )}

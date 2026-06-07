@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { getMsToken, graphGet } from "@/lib/graph";
+import { NextRequest, NextResponse } from "next/server";
+import { getMsToken, graphGet, graphPatch } from "@/lib/graph";
 
 const GP_GROUP_NAME = process.env.MS_GROUP_NAME ?? "GP Team";
 const GP_PLAN_NAME = process.env.MS_PLAN_NAME ?? "GP Team";
@@ -41,19 +41,54 @@ export async function GET() {
 
     const data = (await graphGet(
       token,
-      `/planner/plans/${planId}/tasks?$select=title,percentComplete`
-    )) as { value: { title: string; percentComplete: number }[] };
+      `/planner/plans/${planId}/tasks?$select=id,title,percentComplete`
+    )) as { value: { id: string; title: string; percentComplete: number }[] };
 
     const keyPattern = /^\[([A-Z]+-\d+)\]/;
     const tasks = (data.value ?? [])
       .map((t) => {
         const match = keyPattern.exec(t.title);
         if (!match) return null;
-        return { key: match[1], status: toStatusLabel(t.percentComplete ?? 0) };
+        return { key: match[1], status: toStatusLabel(t.percentComplete ?? 0), taskId: t.id };
       })
-      .filter((t): t is { key: string; status: string } => t !== null);
+      .filter((t): t is { key: string; status: string; taskId: string } => t !== null);
 
     return NextResponse.json({ tasks });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/** status нэрийг percentComplete руу хөрвүүлнэ */
+function toPercentComplete(status: string): number {
+  if (status === "Completed") return 100;
+  if (status === "In Progress") return 50;
+  return 0;
+}
+
+/** Planner task-ийн статусыг шинэчилнэ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const { taskId, status } = (await req.json()) as { taskId: string; status: string };
+    if (!taskId || !status) {
+      return NextResponse.json({ error: "taskId болон status шаардлагатай" }, { status: 400 });
+    }
+
+    const token = await getMsToken();
+
+    // eTag авах
+    const taskData = (await graphGet(token, `/planner/tasks/${taskId}`)) as Record<string, unknown>;
+    const etag = taskData["@odata.etag"] as string;
+
+    await graphPatch(
+      token,
+      `/planner/tasks/${taskId}`,
+      { percentComplete: toPercentComplete(status) },
+      etag
+    );
+
+    return NextResponse.json({ ok: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
