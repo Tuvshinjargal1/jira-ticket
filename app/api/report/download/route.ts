@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { getJiraAuthHeader, PARTICIPANTS } from "@/lib/jira";
+import { getJiraAuthHeader } from "@/lib/jira";
 import type { JiraTicket } from "@/types";
 
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
@@ -25,23 +25,22 @@ async function fetchByJql(jql: string): Promise<JiraTicket[]> {
   return (data.issues ?? []) as JiraTicket[];
 }
 
-/** Fetch today's open + today's resolved tickets for one participant email */
-async function fetchDailyForEmail(email: string): Promise<JiraTicket[]> {
+/** Assignee displayName-аар өдрийн тикетүүдийг татна */
+async function fetchDailyForAssignee(displayName: string): Promise<JiraTicket[]> {
   const today = new Date();
   const ymd = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}`;
 
   const [open, resolved] = await Promise.all([
-    // All non-resolved tickets still tracking
+    // Хаагдаагүй тикетүүд
     fetchByJql(
-      `project in ("DC") AND "Request Participants" = "${email}" AND status != Resolved ORDER BY created DESC`
+      `project = "DC" AND assignee = "${displayName}" AND status != Resolved ORDER BY created DESC`
     ),
-    // Tickets resolved today
+    // Өнөөдөр хаагдсан тикетүүд
     fetchByJql(
-      `project in ("DC") AND "Request Participants" = "${email}" AND status = Resolved AND updated >= "${ymd}" ORDER BY updated DESC`
+      `project = "DC" AND assignee = "${displayName}" AND status = Resolved AND updated >= "${ymd}" ORDER BY updated DESC`
     ),
   ]);
 
-  // Deduplicate (resolved ticket might also appear in open if race condition)
   const seen = new Set<string>();
   const all: JiraTicket[] = [];
   for (const t of [...resolved, ...open]) {
@@ -49,6 +48,12 @@ async function fetchDailyForEmail(email: string): Promise<JiraTicket[]> {
   }
   return all;
 }
+
+/** Тайлан гаргах assignee-уудын жагсаалт */
+const REPORT_ASSIGNEES = [
+  { displayName: "Uyanga" },
+  { displayName: "Khulan" },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -139,7 +144,7 @@ const GROUP_ORDER: ReturnType<typeof ticketGroup>[] = [
 
 function buildDailySheet(
   tickets: JiraTicket[],
-  assignName: string,
+  _assignName: string,
   dateSerial: number,
   totalLabel: string
 ): XLSX.WorkSheet {
@@ -182,7 +187,7 @@ function buildDailySheet(
       aoa.push([
         dateSerial,
         totalLabel,
-        assignName,
+        t.fields.assignee?.displayName ?? "",
         groupKey,
         getSystem(t),
         `${t.key} ${t.fields.summary}`,
@@ -201,11 +206,25 @@ function buildDailySheet(
 
   const lastDataRow = curRow - 1;
 
-  // Merge Day (A=0), Total ticket (B=1), Assign (C=2) for all data rows
+  // Merge Day (A=0) and Total ticket (B=1) for all data rows
   if (lastDataRow >= dataStartRow) {
     merges.push({ s: { r: dataStartRow, c: 0 }, e: { r: lastDataRow, c: 0 } });
     merges.push({ s: { r: dataStartRow, c: 1 }, e: { r: lastDataRow, c: 1 } });
-    merges.push({ s: { r: dataStartRow, c: 2 }, e: { r: lastDataRow, c: 2 } });
+  }
+
+  // Merge Assign (C=2) for consecutive rows with the same assignee
+  if (lastDataRow >= dataStartRow) {
+    let blockStart = dataStartRow;
+    for (let r = dataStartRow + 1; r <= lastDataRow + 1; r++) {
+      const prev = aoa[r - 1]?.[2] ?? "";
+      const cur  = aoa[r]?.[2]  ?? null;
+      if (cur === null || cur !== prev) {
+        if (r - 1 > blockStart) {
+          merges.push({ s: { r: blockStart, c: 2 }, e: { r: r - 1, c: 2 } });
+        }
+        blockStart = r;
+      }
+    }
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -220,7 +239,7 @@ function buildDailySheet(
   ws["!cols"] = [
     { wch: 10 },  // A: Day
     { wch: 15 },  // B: Total ticket
-    { wch: 18 },  // C: Assign
+    { wch: 20 },  // C: Assign
     { wch: 16 },  // D: Ticket types
     { wch: 12 },  // E: System
     { wch: 55 },  // F: Ticket name
@@ -246,22 +265,26 @@ export async function GET() {
 
     const wb = XLSX.utils.book_new();
 
-    // Fetch each participant's tickets in parallel
+    // Assignee бүрийн тикетийг зэрэгцээ татна
     const results = await Promise.all(
-      PARTICIPANTS.map(async (p) => ({
-        displayName: p.displayName,
-        tickets: await fetchDailyForEmail(p.email),
+      REPORT_ASSIGNEES.map(async (a) => ({
+        displayName: a.displayName,
+        tickets: await fetchDailyForAssignee(a.displayName),
       }))
     );
 
-    for (const { displayName, tickets } of results) {
-      const totalLabel = `DC-${tickets.length}`;
-
-      // Sheet name: "Name_MMDD" (max 31 chars)
-      const sheetName = `${displayName}_${sheetDateLabel}`.slice(0, 31);
-      const ws = buildDailySheet(tickets, displayName, dateSerial, totalLabel);
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    // Нэгтгэж давхардлыг арилгана
+    const seen = new Set<string>();
+    const allTickets: JiraTicket[] = [];
+    for (const { tickets } of results) {
+      for (const t of tickets) {
+        if (!seen.has(t.key)) { seen.add(t.key); allTickets.push(t); }
+      }
     }
+
+    const totalLabel = `DC-${allTickets.length}`;
+    const ws = buildDailySheet(allTickets, "", dateSerial, totalLabel);
+    XLSX.utils.book_append_sheet(wb, ws, sheetDateLabel);
 
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     const fileName = `daily-report-${today.getFullYear()}-${mm}-${dd}.xlsx`;
