@@ -23,7 +23,7 @@ async function fetchTicketsForEmail(email: string): Promise<JiraTicket[]> {
   url.searchParams.set("jql", jql);
   url.searchParams.set(
     "fields",
-    "summary,description,assignee,priority,duedate,status,labels,comment,created"
+    "summary,description,assignee,reporter,priority,duedate,status,labels,comment,created,issuetype,components"
   );
   url.searchParams.set("maxResults", "50");
 

@@ -18,9 +18,21 @@ export interface JiraTicket {
     priority: {
       name: string;
     };
+    issuetype: {
+      name: string;
+    } | null;
+    components: { name: string }[];
     duedate: string | null;
     created: string;
     labels: string[];
+    comment: {
+      comments: {
+        author: { displayName: string };
+        body: AdfDoc | string;
+        created: string;
+      }[];
+      total: number;
+    } | null;
   };
 }
 

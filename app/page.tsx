@@ -7,6 +7,7 @@ import {
   CheckCircle2, SkipForward, XCircle,
   Users, CheckCheck, User,
   ChevronDown, ChevronRight,
+  Download,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -537,6 +538,7 @@ export default function Home() {
     errors: number;
   } | null>(null);
   const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, { status: string; taskId: string }>>(new Map());
+  const [downloading, setDownloading] = useState(false);
 
   const hasData = allTickets.length > 0;
 
@@ -683,6 +685,30 @@ export default function Home() {
     }
   };
 
+  // ── Download Excel report ──
+  const downloadReport = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch("/api/report/download");
+      if (!res.ok) throw new Error("Татаж авахад алдаа гарлаа");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = res.headers.get("Content-Disposition") ?? "";
+      const match = cd.match(/filename="([^"]+)"/);
+      a.download = match?.[1] ?? "daily-ticket-info.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // ── Current tab tickets ──
   const currentTickets = (
     activeTab === "all"
@@ -735,6 +761,24 @@ export default function Home() {
               )}
             </button>
           )}
+
+          <button
+            onClick={downloadReport}
+            disabled={downloading}
+            className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {downloading ? (
+              <>
+                <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
+                Татаж байна…
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Өдрийн тайлан (.xlsx)
+              </>
+            )}
+          </button>
         </div>
 
         {/* Errors */}
