@@ -7,7 +7,7 @@ import {
   CheckCircle2, SkipForward, XCircle,
   Users, CheckCheck, User,
   ChevronDown, ChevronRight,
-  Download,
+  Download, RefreshCw,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -16,6 +16,7 @@ import type {
   SyncResult,
 } from "@/types";
 import type { ReportType } from "@/lib/planner-report";
+import { adfToPlainText } from "@/lib/adf";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const PRIORITY_COLORS: Record<string, string> = {
@@ -61,6 +62,63 @@ const PLANNER_STATUS_STYLES: Record<string, string> = {
   "Not Started": "text-emerald-700 bg-emerald-100 border-emerald-200",
 };
 
+function getLastComments(ticket: JiraTicket, limit = 3) {
+  const all = ticket.fields.comment?.comments ?? [];
+  return all.slice(-limit).reverse();
+}
+
+function CommentsDropdown({ ticket }: { ticket: JiraTicket }) {
+  const [open, setOpen] = useState(false);
+  const comments = getLastComments(ticket, 3);
+
+  if (!comments.length) return null;
+
+  return (
+    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-blue-600 transition-colors"
+      >
+        <MessageSquare className="w-3 h-3 shrink-0" />
+        <span>{comments.length} comment</span>
+        <ChevronDown
+          className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-1.5 rounded-md border border-slate-200 bg-slate-50/80 divide-y divide-slate-100">
+          {comments.map((c, i) => {
+            const body = adfToPlainText(c.body);
+            const date = new Date(c.created).toLocaleString("mn-MN", {
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            return (
+              <div key={`${c.created}-${i}`} className="px-2.5 py-2">
+                <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                  <span className="text-[11px] font-medium text-slate-700 truncate">
+                    {c.author?.displayName ?? "—"}
+                  </span>
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">
+                    {date}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 whitespace-pre-wrap break-words leading-snug line-clamp-4">
+                  {body || <span className="text-slate-400 italic">(хоосон)</span>}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Single ticket row ─────────────────────────────────────────────────────────
 function TicketRow({
   ticket,
@@ -95,7 +153,7 @@ function TicketRow({
       onClick={() => onToggle(ticket.key)}
       className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${rowBg}`}
     >
-      <td className="py-3 px-3">
+      <td className="py-3 px-3 align-top">
         <input
           type="checkbox"
           checked={isChecked}
@@ -104,7 +162,7 @@ function TicketRow({
           className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
         />
       </td>
-      <td className="py-3 px-3">
+      <td className="py-3 px-3 align-top">
         <div className="flex flex-col gap-1 items-start">
           <a
             href={`https://zerotech.atlassian.net/browse/${ticket.key}`}
@@ -132,7 +190,7 @@ function TicketRow({
           )}
         </div>
       </td>
-      <td className="py-3 px-3 max-w-xs">
+      <td className="py-3 px-3 max-w-md align-top">
         <div className="flex flex-col gap-1">
           <span className="text-slate-800 text-sm line-clamp-2">{f.summary}</span>
           {f.assignee && (
@@ -147,18 +205,19 @@ function TicketRow({
               {participants.join(", ")}
             </span>
           )}
+          <CommentsDropdown ticket={ticket} />
         </div>
       </td>
-      <td className="py-3 px-3 text-xs text-slate-600 whitespace-nowrap">
+      <td className="py-3 px-3 text-xs text-slate-600 whitespace-nowrap align-top">
         {f.assignee?.displayName ?? <span className="text-slate-400">—</span>}
       </td>
-      <td className="py-3 px-3">
+      <td className="py-3 px-3 align-top">
         <Badge label={f.status?.name ?? "—"} colorMap={STATUS_COLORS} />
       </td>
-      <td className="py-3 px-3">
+      <td className="py-3 px-3 align-top">
         <Badge label={f.priority?.name ?? "—"} colorMap={PRIORITY_COLORS} />
       </td>
-      <td className="py-3 px-3 text-xs text-slate-500 whitespace-nowrap">
+      <td className="py-3 px-3 text-xs text-slate-500 whitespace-nowrap align-top">
         {created}
       </td>
     </tr>
@@ -543,14 +602,17 @@ export default function Home() {
   const hasData = allTickets.length > 0;
 
   // ── Fetch ──
-  const loadTickets = useCallback(async () => {
+  const loadTickets = useCallback(async (opts?: { preserveUi?: boolean }) => {
     setLoading(true);
     setFetchError(null);
-    setResults(null);
-    setSummary(null);
-    setSelected(new Set());
-    setPlannerStatusMap(new Map());
-    setActiveTab("all");
+
+    if (!opts?.preserveUi) {
+      setResults(null);
+      setSummary(null);
+      setSelected(new Set());
+      setPlannerStatusMap(new Map());
+      setActiveTab("all");
+    }
 
     try {
       const [jiraRes, plannerRes] = await Promise.all([
@@ -559,8 +621,14 @@ export default function Home() {
       ]);
       const data = await jiraRes.json();
       if (!jiraRes.ok) throw new Error(data.error ?? "Ticket татахад алдаа гарлаа");
-      setAllTickets(data.allTickets ?? []);
+      const nextAll: TicketWithParticipants[] = data.allTickets ?? [];
+      setAllTickets(nextAll);
       setByPerson(data.byPerson ?? []);
+
+      if (opts?.preserveUi) {
+        const keys = new Set(nextAll.map((t) => t.key));
+        setSelected((prev) => new Set([...prev].filter((k) => keys.has(k))));
+      }
 
       // Planner-д аль хэдийн байгаа task-уудыг тэмдэглэнэ
       if (plannerRes.ok) {
@@ -738,12 +806,14 @@ export default function Home() {
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         {/* Controls */}
         <div className="flex items-center gap-3">
-          {loading && (
-            <span className="inline-flex items-center gap-2 text-sm text-slate-500">
-              <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
-              Татаж байна…
-            </span>
-          )}
+          <button
+            onClick={() => loadTickets({ preserveUi: true })}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            {loading ? "Татаж байна…" : "Шинэчлэх"}
+          </button>
 
           {hasData && (
             <button

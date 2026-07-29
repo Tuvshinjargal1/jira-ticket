@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
+import { adfToPlainText } from "@/lib/adf";
 import { getJiraAuthHeader } from "@/lib/jira";
 import type { JiraTicket } from "@/types";
 
@@ -95,21 +96,7 @@ function getRequestType(t: JiraTicket): string {
   };
   const label = mn[t.fields.issuetype?.name ?? ""] ?? t.fields.issuetype?.name ?? "Бусад";
   const pri = t.fields.priority?.name ?? "";
-  return pri ? `${label}- ${pri} ` : label;
-}
-
-function adfToText(body: unknown): string {
-  if (!body) return "";
-  if (typeof body === "string") return body;
-  const parts: string[] = [];
-  function walk(n: unknown) {
-    if (!n || typeof n !== "object") return;
-    const node = n as { text?: string; content?: unknown[] };
-    if (node.text) parts.push(node.text);
-    node.content?.forEach(walk);
-  }
-  walk(body);
-  return parts.join(" ").trim();
+  return pri ? `${label} - ${pri}` : label;
 }
 
 function getStatus(t: JiraTicket): string {
@@ -117,7 +104,7 @@ function getStatus(t: JiraTicket): string {
   if (!comments.length) return t.fields.status?.name ?? "";
   const last = comments[comments.length - 1];
   const author = last.author?.displayName ?? "";
-  const text = adfToText(last.body);
+  const text = adfToPlainText(last.body);
   return author ? `${author}\r\n${text}` : text;
 }
 
@@ -128,7 +115,7 @@ function getResolved(t: JiraTicket): string {
   if (!comments.length) return t.fields.status?.name ?? "";
   const last = comments[comments.length - 1];
   const author = last.author?.displayName ?? "";
-  const text = adfToText(last.body);
+  const text = adfToPlainText(last.body);
   return author ? `${author}\r\n${text}` : text;
 }
 
@@ -229,10 +216,17 @@ function buildDailySheet(
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // Format Day cells as date
+  // Format Day cells as date; wrap text for status/resolved columns
   for (let r = dataStartRow; r <= lastDataRow; r++) {
-    const addr = XLSX.utils.encode_cell({ r, c: 0 });
-    if (ws[addr]) { ws[addr].t = "n"; ws[addr].z = "m/d/yy"; }
+    const dayAddr = XLSX.utils.encode_cell({ r, c: 0 });
+    if (ws[dayAddr]) { ws[dayAddr].t = "n"; ws[dayAddr].z = "m/d/yy"; }
+
+    for (const c of [7, 8]) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (ws[addr] && typeof ws[addr].v === "string") {
+        ws[addr].s = { alignment: { wrapText: true, vertical: "top" } };
+      }
+    }
   }
 
   ws["!merges"] = merges;

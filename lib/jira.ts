@@ -1,4 +1,5 @@
-import type { AdfDoc, JiraTicket, PersonGroup, TicketWithParticipants } from "@/types";
+import type { JiraTicket, PersonGroup, TicketWithParticipants } from "@/types";
+export { extractPlainText, adfToPlainText } from "@/lib/adf";
 
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
 const JIRA_EMAIL = process.env.JIRA_EMAIL!;
@@ -78,18 +79,4 @@ export async function fetchAllParticipantTickets(): Promise<{
     byPerson: perPerson,
     allTickets: Array.from(ticketMap.values()),
   };
-}
-
-export function extractPlainText(node: AdfDoc | string | null): string {
-  if (!node) return "";
-  if (typeof node === "string") return node;
-  let text = "";
-  if (node.text) text += node.text;
-  if (Array.isArray(node.content)) {
-    for (const child of node.content) {
-      text += extractPlainText(child as AdfDoc);
-    }
-  }
-  if (node.type === "paragraph") text += "\n";
-  return text;
 }
