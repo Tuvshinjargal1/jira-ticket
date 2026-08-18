@@ -8,6 +8,7 @@ import {
   Users, CheckCheck, User,
   ChevronDown, ChevronRight,
   Download, RefreshCw,
+  Filter, X,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -46,6 +47,18 @@ const REQUEST_TYPE_COLORS: Record<string, string> = {
   "Дараах төлбөрт өөчлөлт": "bg-amber-100 text-amber-700",
   "Бусад": "bg-slate-100 text-slate-600",
 };
+
+/** Эрэмбийг Jira-ийн дарааллаар нь эрэмбэлэх (жагсаалтад байхгүй нь сүүлд) */
+const PRIORITY_ORDER = ["Highest", "Urgent", "High", "Important", "Medium", "Low", "Lowest"];
+
+const NONE = "—";
+
+/** Шүүлтүүрийн "бүх утга" сонголт */
+const ALL = "all";
+
+function getPriorityName(ticket: JiraTicket): string {
+  return ticket.fields.priority?.name ?? NONE;
+}
 
 function Badge({
   label,
@@ -385,6 +398,136 @@ function TicketTable({
   );
 }
 
+// ── Filters ───────────────────────────────────────────────────────────────────
+interface FilterOption {
+  value: string;
+  count: number;
+}
+
+/** Утга бүрийн тоог гаргаж, өгсөн дарааллаар эрэмбэлнэ */
+function buildOptions(
+  values: string[],
+  order?: string[]
+): FilterOption[] {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+
+  return Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) => {
+    if (order) {
+      const ai = order.indexOf(a.value);
+      const bi = order.indexOf(b.value);
+      if (ai !== bi) return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
+    }
+    return b.count - a.count || a.value.localeCompare(b.value);
+  });
+}
+
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+}) {
+  const active = value !== ALL;
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="text-xs text-slate-500">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`text-xs rounded-md border px-2 py-1.5 outline-none cursor-pointer transition-colors ${
+          active
+            ? "border-blue-300 bg-blue-50 text-blue-700 font-medium"
+            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+        }`}
+      >
+        <option value={ALL}>Бүгд</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.value} ({o.count})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function FilterBar({
+  requestType,
+  priority,
+  status,
+  requestTypeOptions,
+  priorityOptions,
+  statusOptions,
+  onRequestTypeChange,
+  onPriorityChange,
+  onStatusChange,
+  onReset,
+  shown,
+  total,
+}: {
+  requestType: string;
+  priority: string;
+  status: string;
+  requestTypeOptions: FilterOption[];
+  priorityOptions: FilterOption[];
+  statusOptions: FilterOption[];
+  onRequestTypeChange: (v: string) => void;
+  onPriorityChange: (v: string) => void;
+  onStatusChange: (v: string) => void;
+  onReset: () => void;
+  shown: number;
+  total: number;
+}) {
+  const hasFilter = requestType !== ALL || priority !== ALL || status !== ALL;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 my-3 flex flex-wrap items-center gap-3">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <Filter className="w-3.5 h-3.5" /> Шүүлтүүр
+      </span>
+
+      <FilterSelect
+        label="Хүсэлтийн төрөл"
+        value={requestType}
+        options={requestTypeOptions}
+        onChange={onRequestTypeChange}
+      />
+      <FilterSelect
+        label="Эрэмбэ"
+        value={priority}
+        options={priorityOptions}
+        onChange={onPriorityChange}
+      />
+      <FilterSelect
+        label="Статус"
+        value={status}
+        options={statusOptions}
+        onChange={onStatusChange}
+      />
+
+      {hasFilter && (
+        <>
+          <span className="text-xs text-slate-500">
+            {shown} / {total} ticket
+          </span>
+          <button
+            onClick={onReset}
+            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-600 transition-colors"
+          >
+            <X className="w-3 h-3" /> Цэвэрлэх
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Result row ────────────────────────────────────────────────────────────────
 function ResultRow({ r }: { r: SyncResult }) {
   const icon =
@@ -620,6 +763,15 @@ export default function Home() {
   } | null>(null);
   const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, { status: string; taskId: string }>>(new Map());
   const [downloading, setDownloading] = useState(false);
+  const [requestTypeFilter, setRequestTypeFilter] = useState<string>(ALL);
+  const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
+  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+
+  const resetFilters = () => {
+    setRequestTypeFilter(ALL);
+    setPriorityFilter(ALL);
+    setStatusFilter(ALL);
+  };
 
   const hasData = allTickets.length > 0;
 
@@ -634,6 +786,9 @@ export default function Home() {
       setSelected(new Set());
       setPlannerStatusMap(new Map());
       setActiveTab("all");
+      setRequestTypeFilter(ALL);
+      setPriorityFilter(ALL);
+      setStatusFilter(ALL);
     }
 
     try {
@@ -800,12 +955,24 @@ export default function Home() {
   };
 
   // ── Current tab tickets ──
-  const currentTickets = (
+  const tabTickets = (
     activeTab === "all"
       ? allTickets
       : (byPerson.find((p) => p.email === activeTab)?.tickets ?? [])
   ).slice().sort((a, b) =>
     new Date(b.fields.created).getTime() - new Date(a.fields.created).getTime()
+  );
+
+  // Шүүлтүүрийн сонголтууд — идэвхтэй табын ticket-үүдээс тоолж гаргана
+  const requestTypeOptions = buildOptions(tabTickets.map((t) => getRequestTypeName(t) ?? NONE));
+  const priorityOptions = buildOptions(tabTickets.map(getPriorityName), PRIORITY_ORDER);
+  const statusOptions = buildOptions(tabTickets.map((t) => t.fields.status?.name ?? NONE));
+
+  const currentTickets = tabTickets.filter(
+    (t) =>
+      (requestTypeFilter === ALL || (getRequestTypeName(t) ?? NONE) === requestTypeFilter) &&
+      (priorityFilter === ALL || getPriorityName(t) === priorityFilter) &&
+      (statusFilter === ALL || (t.fields.status?.name ?? NONE) === statusFilter)
   );
 
   return (
@@ -932,6 +1099,22 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            {/* Filters */}
+            <FilterBar
+              requestType={requestTypeFilter}
+              priority={priorityFilter}
+              status={statusFilter}
+              requestTypeOptions={requestTypeOptions}
+              priorityOptions={priorityOptions}
+              statusOptions={statusOptions}
+              onRequestTypeChange={setRequestTypeFilter}
+              onPriorityChange={setPriorityFilter}
+              onStatusChange={setStatusFilter}
+              onReset={resetFilters}
+              shown={currentTickets.length}
+              total={tabTickets.length}
+            />
 
             {/* Table */}
             <TicketTable
