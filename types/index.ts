@@ -21,6 +21,14 @@ export interface JiraTicket {
     issuetype: {
       name: string;
     } | null;
+    /** JSM "Request Type" — customfield_10010 (com.atlassian.servicedesk:vp-origin) */
+    customfield_10010?: {
+      requestType: {
+        id: string;
+        name: string;
+        description?: string;
+      } | null;
+    } | null;
     components: { name: string }[];
     duedate: string | null;
     created: string;

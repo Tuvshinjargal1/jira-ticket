@@ -1,5 +1,7 @@
 import type { JiraTicket, PersonGroup, TicketWithParticipants } from "@/types";
+import { REQUEST_TYPE_FIELD } from "@/lib/request-type";
 export { extractPlainText, adfToPlainText } from "@/lib/adf";
+export { REQUEST_TYPE_FIELD, getRequestTypeName } from "@/lib/request-type";
 
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
 const JIRA_EMAIL = process.env.JIRA_EMAIL!;
@@ -24,7 +26,7 @@ async function fetchTicketsForEmail(email: string): Promise<JiraTicket[]> {
   url.searchParams.set("jql", jql);
   url.searchParams.set(
     "fields",
-    "summary,description,assignee,reporter,priority,duedate,status,labels,comment,created,issuetype,components"
+    `summary,description,assignee,reporter,priority,duedate,status,labels,comment,created,issuetype,components,${REQUEST_TYPE_FIELD}`
   );
   url.searchParams.set("maxResults", "50");
 

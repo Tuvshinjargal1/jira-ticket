@@ -17,6 +17,7 @@ import type {
 } from "@/types";
 import type { ReportType } from "@/lib/planner-report";
 import { adfToPlainText } from "@/lib/adf";
+import { getRequestTypeName } from "@/lib/request-type";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const PRIORITY_COLORS: Record<string, string> = {
@@ -33,6 +34,17 @@ const STATUS_COLORS: Record<string, string> = {
   "In Progress": "bg-blue-100 text-blue-700",
   Open: "bg-green-100 text-green-700",
   "To Do": "bg-slate-100 text-slate-600",
+};
+
+/** JSM request type (customfield_10010) — DC project дээр байдаг төрлүүд */
+const REQUEST_TYPE_COLORS: Record<string, string> = {
+  "Доголдол": "bg-rose-100 text-rose-700",
+  "Сайжруулалт": "bg-violet-100 text-violet-700",
+  "Шинэ хөгжүүлэлт": "bg-indigo-100 text-indigo-700",
+  "Мэдээлэл өгсөн": "bg-sky-100 text-sky-700",
+  "Үйлчилгээ үзүүлсэн": "bg-emerald-100 text-emerald-700",
+  "Дараах төлбөрт өөчлөлт": "bg-amber-100 text-amber-700",
+  "Бусад": "bg-slate-100 text-slate-600",
 };
 
 function Badge({
@@ -137,6 +149,7 @@ function TicketRow({
 }) {
   const f = ticket.fields;
   const created = new Date(f.created).toLocaleDateString("mn-MN");
+  const requestType = getRequestTypeName(ticket);
   const participants = ticket.participants ?? [];
   const isSynced = !!plannerInfo;
 
@@ -212,6 +225,13 @@ function TicketRow({
         {f.assignee?.displayName ?? <span className="text-slate-400">—</span>}
       </td>
       <td className="py-3 px-3 align-top">
+        {requestType ? (
+          <Badge label={requestType} colorMap={REQUEST_TYPE_COLORS} />
+        ) : (
+          <span className="text-xs text-slate-400">—</span>
+        )}
+      </td>
+      <td className="py-3 px-3 align-top">
         <Badge label={f.status?.name ?? "—"} colorMap={STATUS_COLORS} />
       </td>
       <td className="py-3 px-3 align-top">
@@ -262,6 +282,7 @@ function TicketTable({
         <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Key</th>
         <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Гарчиг</th>
         <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Assignee</th>
+        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Хүсэлтийн төрөл</th>
         <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Статус</th>
         <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Эрэмбэ</th>
         <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Огноо</th>
@@ -298,6 +319,7 @@ function TicketTable({
               <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Key</th>
               <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Гарчиг</th>
               <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Assignee</th>
+              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Хүсэлтийн төрөл</th>
               <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Статус</th>
               <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Эрэмбэ</th>
               <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Огноо</th>
