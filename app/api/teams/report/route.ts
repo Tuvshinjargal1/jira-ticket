@@ -1,22 +1,13 @@
 /**
  * Teams тайлан API
  *
- * GET  /api/teams/report?type=daily|morning|evening|team&email=xxx
- *      → тайланг preview хийнэ (Teams-д илгээхгүй)
- *
- * POST /api/teams/report
- *      body: { type: "daily"|"morning"|"evening"|"team", email?: "...", send?: true }
- *      → send=true бол Teams webhook-оор илгээнэ
- *
- * Scheduled cron (vercel.json):
- *   morning → 09:00 МУБ (UTC+8 → 01:00 UTC)  → type=morning
- *   evening → 18:00 МУБ (UTC+8 → 10:00 UTC)  → type=evening, send=true
- *   weekly  → Баасан 17:00 МУБ               → type=team,    send=true
+ * GET  /api/teams/report?type=digest|daily|morning|evening&email=xxx  → preview
+ * POST /api/teams/report  body: { type, send?: true }  → товчоор Teams-д илгээнэ
  */
 import { NextRequest, NextResponse } from "next/server";
 import {
   generateReports,
-  formatTeamReport,
+  generateDailyDigest,
   type ReportType,
 } from "@/lib/planner-report";
 import {
@@ -25,11 +16,7 @@ import {
 } from "@/lib/teams-webhook";
 import { PARTICIPANTS } from "@/lib/jira";
 
-// ── Хэрэглэгчийн жагсаалт (jira.ts-н PARTICIPANTS ашиглана) ─────────────────
-
-const MEMBERS = PARTICIPANTS; // { email, displayName }[]
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const MEMBERS = PARTICIPANTS;
 
 function getMembers(email?: string | null) {
   if (!email) return MEMBERS;
@@ -37,12 +24,14 @@ function getMembers(email?: string | null) {
   return found.length ? found : null;
 }
 
-// ── GET — preview (илгээхгүй) ─────────────────────────────────────────────────
+function isDigestType(type: string) {
+  return type === "digest" || type === "team";
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const type  = (searchParams.get("type") ?? "daily") as ReportType;
+    const type = (searchParams.get("type") ?? "digest") as ReportType;
     const email = searchParams.get("email");
 
     const members = getMembers(email);
@@ -50,16 +39,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Хэрэглэгч олдсонгүй" }, { status: 404 });
     }
 
-    const reports = await generateReports(members, type === "team" ? "daily" : type);
-
-    if (type === "team") {
+    if (isDigestType(type)) {
+      const { message, reports } = await generateDailyDigest(members);
       return NextResponse.json({
-        type,
-        message: formatTeamReport(reports),
+        type: "digest",
+        message,
         members: reports.map((r) => ({ displayName: r.displayName, stats: r.stats })),
       });
     }
 
+    const reports = await generateReports(members, type);
     return NextResponse.json({
       type,
       reports: reports.map((r) => ({
@@ -74,55 +63,51 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ── POST — Teams-д илгээх ────────────────────────────────────────────────────
-
 export async function POST(req: NextRequest) {
   try {
-    const body   = await req.json().catch(() => ({})) as {
-      type?:  string;
+    const body = (await req.json().catch(() => ({}))) as {
+      type?: string;
       email?: string;
-      send?:  boolean;
+      send?: boolean;
     };
 
-    const type   = (body.type  ?? "daily") as ReportType;
-    const send   = body.send   ?? false;
-    const email  = body.email;
+    const type = (body.type ?? "digest") as ReportType;
+    const send = body.send ?? false;
+    const email = body.email;
 
     const members = getMembers(email);
     if (!members) {
       return NextResponse.json({ error: "Хэрэглэгч олдсонгүй" }, { status: 404 });
     }
 
-    const reportType = type === "team" ? "daily" : type;
-    const reports    = await generateReports(members, reportType);
+    if (isDigestType(type)) {
+      const { message, reports } = await generateDailyDigest(members);
+      if (send) {
+        await sendTeamsMessage(message, "GP Daily Digest");
+      }
+      return NextResponse.json({
+        type: "digest",
+        sent: send,
+        message,
+        members: reports.map((r) => ({ displayName: r.displayName, stats: r.stats })),
+      });
+    }
 
-    // ── Teams-д илгээх ──────────────────────────────────────────────────────
+    const reports = await generateReports(members, type);
+
     if (send) {
-      if (type === "team") {
-        // Нэгдсэн тайлан — нэг карт
-        const teamMsg = formatTeamReport(reports);
-        await sendTeamsMessage(teamMsg);
-      } else if (reports.length === 1) {
-        // Нэг хүн — энгийн мессеж
+      if (reports.length === 1) {
         await sendTeamsMessage(reports[0].message);
       } else {
-        // Олон хүн — хэсэг тус бүр
         await sendTeamsMultiSection(
-          type === "morning" ? "☀️ Өглөөний тайлан" :
-          type === "evening" ? "🌙 Оройн тайлан"    : "📋 Таскийн тойм",
+          type === "morning"
+            ? "☀️ Өглөөний тайлан"
+            : type === "evening"
+              ? "🌙 Оройн тайлан"
+              : "📋 Таскийн тойм",
           reports.map((r) => ({ title: r.displayName, text: r.message }))
         );
       }
-    }
-
-    // ── Хариу буцаах ────────────────────────────────────────────────────────
-    if (type === "team") {
-      return NextResponse.json({
-        type,
-        sent: send,
-        message: formatTeamReport(reports),
-        members: reports.map((r) => ({ displayName: r.displayName, stats: r.stats })),
-      });
     }
 
     return NextResponse.json({

@@ -2,13 +2,13 @@
 
 import { useState, useCallback, useEffect } from "react";
 import {
-  Sun, Moon, ClipboardList, BarChart3,
+  ClipboardList,
   MessageSquare, Eye, Send,
   CheckCircle2, SkipForward, XCircle,
   Users, CheckCheck, User,
   ChevronDown, ChevronRight,
   Download, RefreshCw,
-  Filter, X,
+  Filter, X, Loader2,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -19,33 +19,74 @@ import type {
 import type { ReportType } from "@/lib/planner-report";
 import { adfToPlainText } from "@/lib/adf";
 import { getRequestTypeName } from "@/lib/request-type";
+import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+/** Badge-ийн семантик өнгө — light + dark хосоороо */
+const tone = {
+  red: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  orange: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+  amber: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  yellow: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
+  green: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+  emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  sky: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+  blue: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  indigo: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
+  violet: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  rose: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+  neutral: "bg-muted text-muted-foreground",
+} as const;
+
 const PRIORITY_COLORS: Record<string, string> = {
-  Highest: "bg-red-100 text-red-700",
-  Urgent: "bg-red-100 text-red-700",
-  High: "bg-orange-100 text-orange-700",
-  Important: "bg-orange-100 text-orange-700",
-  Medium: "bg-yellow-100 text-yellow-700",
-  Low: "bg-blue-100 text-blue-700",
-  Lowest: "bg-slate-100 text-slate-600",
+  Highest: tone.red,
+  Urgent: tone.red,
+  High: tone.orange,
+  Important: tone.orange,
+  Medium: tone.yellow,
+  Low: tone.blue,
+  Lowest: tone.neutral,
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  "In Progress": "bg-blue-100 text-blue-700",
-  Open: "bg-green-100 text-green-700",
-  "To Do": "bg-slate-100 text-slate-600",
+  "In Progress": tone.blue,
+  Open: tone.green,
+  Reopened: tone.amber,
+  "To Do": tone.neutral,
 };
 
 /** JSM request type (customfield_10010) — DC project дээр байдаг төрлүүд */
 const REQUEST_TYPE_COLORS: Record<string, string> = {
-  "Доголдол": "bg-rose-100 text-rose-700",
-  "Сайжруулалт": "bg-violet-100 text-violet-700",
-  "Шинэ хөгжүүлэлт": "bg-indigo-100 text-indigo-700",
-  "Мэдээлэл өгсөн": "bg-sky-100 text-sky-700",
-  "Үйлчилгээ үзүүлсэн": "bg-emerald-100 text-emerald-700",
-  "Дараах төлбөрт өөчлөлт": "bg-amber-100 text-amber-700",
-  "Бусад": "bg-slate-100 text-slate-600",
+  "Доголдол": tone.rose,
+  "Сайжруулалт": tone.violet,
+  "Шинэ хөгжүүлэлт": tone.indigo,
+  "Мэдээлэл өгсөн": tone.sky,
+  "Үйлчилгээ үзүүлсэн": tone.emerald,
+  "Дараах төлбөрт өөчлөлт": tone.amber,
+  "Бусад": tone.neutral,
 };
 
 /** Эрэмбийг Jira-ийн дарааллаар нь эрэмбэлэх (жагсаалтад байхгүй нь сүүлд) */
@@ -60,7 +101,12 @@ function getPriorityName(ticket: JiraTicket): string {
   return ticket.fields.priority?.name ?? NONE;
 }
 
-function Badge({
+function Spinner({ className }: { className?: string }) {
+  return <Loader2 className={cn("animate-spin", className)} />;
+}
+
+/** Утгаараа өнгө нь тодорхойлогддог badge */
+function ColorBadge({
   label,
   colorMap,
 }: {
@@ -68,23 +114,18 @@ function Badge({
   colorMap: Record<string, string>;
 }) {
   return (
-    <span
-      className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-        colorMap[label] ?? "bg-slate-100 text-slate-600"
-      }`}
-    >
+    <Badge variant="secondary" className={colorMap[label] ?? tone.neutral}>
       {label}
-    </span>
+    </Badge>
   );
 }
 
 const PLANNER_STATUSES = ["Not Started", "In Progress", "Completed"] as const;
-type PlannerStatus = typeof PLANNER_STATUSES[number];
 
 const PLANNER_STATUS_STYLES: Record<string, string> = {
-  "Completed":   "text-slate-500  bg-slate-100  border-slate-200",
-  "In Progress": "text-blue-700   bg-blue-100   border-blue-200",
-  "Not Started": "text-emerald-700 bg-emerald-100 border-emerald-200",
+  "Completed": tone.neutral,
+  "In Progress": tone.blue,
+  "Not Started": tone.emerald,
 };
 
 function getLastComments(ticket: JiraTicket, limit = 3) {
@@ -100,20 +141,20 @@ function CommentsDropdown({ ticket }: { ticket: JiraTicket }) {
 
   return (
     <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-blue-600 transition-colors"
+        aria-expanded={open}
+        className="-ml-2 text-[11px] text-muted-foreground"
       >
-        <MessageSquare className="w-3 h-3 shrink-0" />
-        <span>{comments.length} comment</span>
-        <ChevronDown
-          className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
+        <MessageSquare />
+        {comments.length} comment
+        <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
+      </Button>
 
       {open && (
-        <div className="mt-1.5 rounded-md border border-slate-200 bg-slate-50/80 divide-y divide-slate-100">
+        <div className="mt-1.5 rounded-md border bg-muted/40 divide-y">
           {comments.map((c, i) => {
             const body = adfToPlainText(c.body);
             const date = new Date(c.created).toLocaleString("mn-MN", {
@@ -125,15 +166,15 @@ function CommentsDropdown({ ticket }: { ticket: JiraTicket }) {
             return (
               <div key={`${c.created}-${i}`} className="px-2.5 py-2">
                 <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                  <span className="text-[11px] font-medium text-slate-700 truncate">
+                  <span className="text-[11px] font-medium text-foreground truncate">
                     {c.author?.displayName ?? "—"}
                   </span>
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
                     {date}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-600 whitespace-pre-wrap break-words leading-snug line-clamp-4">
-                  {body || <span className="text-slate-400 italic">(хоосон)</span>}
+                <p className="text-[11px] text-muted-foreground whitespace-pre-wrap break-words leading-snug line-clamp-4">
+                  {body || <span className="italic">(хоосон)</span>}
                 </p>
               </div>
             );
@@ -166,98 +207,131 @@ function TicketRow({
   const participants = ticket.participants ?? [];
   const isSynced = !!plannerInfo;
 
-  const rowBg = isChecked
-    ? isSynced
-      ? "bg-teal-100 hover:bg-teal-200"
-      : "bg-blue-50 hover:bg-blue-100"
-    : isSynced
-    ? "bg-emerald-50 hover:bg-emerald-100"
-    : "hover:bg-slate-50";
-
   return (
-    <tr
+    <TableRow
       onClick={() => onToggle(ticket.key)}
-      className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${rowBg}`}
+      data-state={isChecked ? "selected" : undefined}
+      className={cn(
+        "cursor-pointer",
+        // Planner-т sync хийгдсэн мөрийг ногоон өнгөөр ялгана
+        isSynced && !isChecked && "bg-emerald-50/70 hover:bg-emerald-100/70 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15"
+      )}
     >
-      <td className="py-3 px-3 align-top">
-        <input
-          type="checkbox"
+      <TableCell className="py-3 align-top">
+        <Checkbox
           checked={isChecked}
-          onChange={() => onToggle(ticket.key)}
+          onCheckedChange={() => onToggle(ticket.key)}
           onClick={(e) => e.stopPropagation()}
-          className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
+          aria-label={`${ticket.key} сонгох`}
         />
-      </td>
-      <td className="py-3 px-3 align-top">
+      </TableCell>
+      <TableCell className="py-3 align-top">
         <div className="flex flex-col gap-1 items-start">
           <a
             href={`https://zerotech.atlassian.net/browse/${ticket.key}`}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="font-mono text-xs text-blue-600 hover:underline"
+            className="font-mono text-xs text-primary hover:underline"
           >
             {ticket.key}
           </a>
           {isSynced && plannerInfo && (
-            <select
+            <Select
               value={plannerInfo.status}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                e.stopPropagation();
-                onStatusChange(ticket.key, plannerInfo.taskId, e.target.value);
-              }}
-              className={`inline-flex items-center text-[10px] font-semibold border px-1.5 py-0.5 rounded-full cursor-pointer appearance-none outline-none ${PLANNER_STATUS_STYLES[plannerInfo.status] ?? "text-emerald-700 bg-emerald-100 border-emerald-200"}`}
+              onValueChange={(v) => onStatusChange(ticket.key, plannerInfo.taskId, v)}
             >
-              {PLANNER_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              <SelectTrigger
+                size="sm"
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  "h-5.5 rounded-full border-transparent px-2 text-[10px] font-semibold",
+                  PLANNER_STATUS_STYLES[plannerInfo.status] ?? tone.emerald
+                )}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PLANNER_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s} className="text-xs">
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
-      </td>
-      <td className="py-3 px-3 max-w-md align-top">
+      </TableCell>
+      <TableCell className="py-3 max-w-md whitespace-normal align-top">
         <div className="flex flex-col gap-1">
-          <span className="text-slate-800 text-sm line-clamp-2">{f.summary}</span>
+          <span className="text-sm line-clamp-2">{f.summary}</span>
           {f.assignee && (
-            <span className="inline-flex items-center gap-1 text-xs text-slate-500 font-medium">
-              <User className="w-3 h-3 text-slate-400" />
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground font-medium">
+              <User className="w-3 h-3" />
               {f.assignee.displayName}
             </span>
           )}
           {showParticipants && participants.length > 0 && (
-            <span className="inline-flex items-center gap-1 text-xs text-violet-600 font-medium">
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400">
               <Users className="w-3 h-3" />
               {participants.join(", ")}
             </span>
           )}
           <CommentsDropdown ticket={ticket} />
         </div>
-      </td>
-      <td className="py-3 px-3 text-xs text-slate-600 whitespace-nowrap align-top">
-        {f.assignee?.displayName ?? <span className="text-slate-400">—</span>}
-      </td>
-      <td className="py-3 px-3 align-top">
+      </TableCell>
+      <TableCell className="py-3 text-xs text-muted-foreground align-top">
+        {f.assignee?.displayName ?? "—"}
+      </TableCell>
+      <TableCell className="py-3 align-top">
         {requestType ? (
-          <Badge label={requestType} colorMap={REQUEST_TYPE_COLORS} />
+          <ColorBadge label={requestType} colorMap={REQUEST_TYPE_COLORS} />
         ) : (
-          <span className="text-xs text-slate-400">—</span>
+          <span className="text-xs text-muted-foreground">—</span>
         )}
-      </td>
-      <td className="py-3 px-3 align-top">
-        <Badge label={f.status?.name ?? "—"} colorMap={STATUS_COLORS} />
-      </td>
-      <td className="py-3 px-3 align-top">
-        <Badge label={f.priority?.name ?? "—"} colorMap={PRIORITY_COLORS} />
-      </td>
-      <td className="py-3 px-3 text-xs text-slate-500 whitespace-nowrap align-top">
+      </TableCell>
+      <TableCell className="py-3 align-top">
+        <ColorBadge label={f.status?.name ?? "—"} colorMap={STATUS_COLORS} />
+      </TableCell>
+      <TableCell className="py-3 align-top">
+        <ColorBadge label={f.priority?.name ?? "—"} colorMap={PRIORITY_COLORS} />
+      </TableCell>
+      <TableCell className="py-3 text-xs text-muted-foreground align-top">
         {created}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
 // ── Ticket table ──────────────────────────────────────────────────────────────
+const TICKET_COLUMNS = [
+  "Key",
+  "Гарчиг",
+  "Assignee",
+  "Хүсэлтийн төрөл",
+  "Статус",
+  "Эрэмбэ",
+  "Огноо",
+];
+
+function TicketTableHeader({ selectAll }: { selectAll?: React.ReactNode }) {
+  return (
+    <TableHeader className="bg-muted/50">
+      <TableRow className="hover:bg-transparent">
+        <TableHead className="w-10 px-3">{selectAll}</TableHead>
+        {TICKET_COLUMNS.map((col) => (
+          <TableHead
+            key={col}
+            className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            {col}
+          </TableHead>
+        ))}
+      </TableRow>
+    </TableHeader>
+  );
+}
+
 function TicketTable({
   tickets,
   showParticipants,
@@ -288,113 +362,70 @@ function TicketTable({
   const allChecked = keys.length > 0 && keys.every((k) => selected.has(k));
   const someChecked = keys.some((k) => selected.has(k)) && !allChecked;
 
-  const tableHead = (
-    <thead className="bg-slate-50">
-      <tr>
-        <th className="w-10 py-2 px-3" />
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Key</th>
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Гарчиг</th>
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Assignee</th>
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Хүсэлтийн төрөл</th>
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Статус</th>
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Эрэмбэ</th>
-        <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Огноо</th>
-      </tr>
-    </thead>
-  );
+  const rows = (list: typeof tickets) =>
+    list.map((ticket) => (
+      <TicketRow
+        key={ticket.key}
+        ticket={ticket}
+        showParticipants={showParticipants}
+        isChecked={selected.has(ticket.key)}
+        onToggle={onToggleOne}
+        plannerInfo={plannerStatusMap.get(ticket.key)}
+        onStatusChange={onStatusChange}
+      />
+    ));
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-        <span className="text-sm text-slate-500">{activeTickets.length} ticket</span>
-        <button
-          onClick={() => onToggleAll(keys)}
-          className="text-xs text-blue-600 hover:underline"
-        >
+    <Card className="py-0 gap-0">
+      <div className="px-4 py-3 border-b flex items-center justify-between">
+        <span className="text-sm text-muted-foreground">
+          {activeTickets.length} ticket
+        </span>
+        <Button variant="link" size="xs" onClick={() => onToggleAll(keys)}>
           {allChecked ? "Бүгдийг болиулах" : "Бүгдийг сонгох"}
-        </button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="w-10 py-2 px-3">
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someChecked;
-                  }}
-                  onChange={() => onToggleAll(keys)}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
-                />
-              </th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Key</th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Гарчиг</th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Assignee</th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Хүсэлтийн төрөл</th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Статус</th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Эрэмбэ</th>
-              <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">Огноо</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeTickets.map((ticket) => (
-              <TicketRow
-                key={ticket.key}
-                ticket={ticket}
-                showParticipants={showParticipants}
-                isChecked={selected.has(ticket.key)}
-                onToggle={onToggleOne}
-                plannerInfo={plannerStatusMap.get(ticket.key)}
-                onStatusChange={onStatusChange}
-              />
-            ))}
-          </tbody>
-        </table>
+        </Button>
       </div>
 
-      {/* Completed tickets collapsible section */}
+      <Table>
+        <TicketTableHeader
+          selectAll={
+            <Checkbox
+              checked={allChecked ? true : someChecked ? "indeterminate" : false}
+              onCheckedChange={() => onToggleAll(keys)}
+              aria-label="Бүгдийг сонгох"
+              className="data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary/40"
+            />
+          }
+        />
+        <TableBody>{rows(activeTickets)}</TableBody>
+      </Table>
+
+      {/* Дууссан таскууд — хумигдах хэсэг */}
       {completedTickets.length > 0 && (
-        <div className="border-t border-slate-200">
-          <button
+        <div className="border-t">
+          <Button
+            variant="ghost"
             onClick={() => setCompletedOpen((v) => !v)}
-            className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+            className="w-full justify-start rounded-none px-4 py-3 h-auto text-muted-foreground"
           >
-            {completedOpen ? (
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            )}
-            <CheckCircle2 className="w-4 h-4 text-slate-400" />
-            <span>Дууссан таскууд</span>
-            <span className="ml-1 text-xs bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 font-normal">
+            {completedOpen ? <ChevronDown /> : <ChevronRight />}
+            <CheckCircle2 />
+            Дууссан таскууд
+            <Badge variant="secondary" className="ml-1">
               {completedTickets.length}
-            </span>
-          </button>
+            </Badge>
+          </Button>
           {completedOpen && (
-            <div className="overflow-x-auto border-t border-slate-100">
-              <table className="w-full text-sm opacity-70">
-                {tableHead}
-                <tbody>
-                  {completedTickets.map((ticket) => (
-                    <TicketRow
-                      key={ticket.key}
-                      ticket={ticket}
-                      showParticipants={showParticipants}
-                      isChecked={selected.has(ticket.key)}
-                      onToggle={onToggleOne}
-                      plannerInfo={plannerStatusMap.get(ticket.key)}
-                      onStatusChange={onStatusChange}
-                    />
-                  ))}
-                </tbody>
-              </table>
+            <div className="border-t opacity-70">
+              <Table>
+                <TicketTableHeader />
+                <TableBody>{rows(completedTickets)}</TableBody>
+              </Table>
             </div>
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -435,25 +466,28 @@ function FilterSelect({
 }) {
   const active = value !== ALL;
   return (
-    <label className="inline-flex items-center gap-1.5">
-      <span className="text-xs text-slate-500">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`text-xs rounded-md border px-2 py-1.5 outline-none cursor-pointer transition-colors ${
-          active
-            ? "border-blue-300 bg-blue-50 text-blue-700 font-medium"
-            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-        }`}
-      >
-        <option value={ALL}>Бүгд</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.value} ({o.count})
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="inline-flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger
+          size="sm"
+          className={cn("text-xs", active && "border-primary/40 bg-muted font-medium")}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL} className="text-xs">
+            Бүгд
+          </SelectItem>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value} className="text-xs">
+              {o.value}
+              <span className="text-muted-foreground">({o.count})</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -487,8 +521,8 @@ function FilterBar({
   const hasFilter = requestType !== ALL || priority !== ALL || status !== ALL;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 my-3 flex flex-wrap items-center gap-3">
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+    <Card className="my-3 px-4 py-3 flex-row flex-wrap items-center gap-3">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Filter className="w-3.5 h-3.5" /> Шүүлтүүр
       </span>
 
@@ -513,27 +547,25 @@ function FilterBar({
 
       {hasFilter && (
         <>
-          <span className="text-xs text-slate-500">
+          <Separator orientation="vertical" className="h-5" />
+          <span className="text-xs text-muted-foreground">
             {shown} / {total} ticket
           </span>
-          <button
-            onClick={onReset}
-            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-600 transition-colors"
-          >
-            <X className="w-3 h-3" /> Цэвэрлэх
-          </button>
+          <Button variant="ghost" size="xs" onClick={onReset}>
+            <X /> Цэвэрлэх
+          </Button>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
 // ── Result row ────────────────────────────────────────────────────────────────
 function ResultRow({ r }: { r: SyncResult }) {
   const icon =
-    r.status === "created" ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> :
-    r.status === "skipped" ? <SkipForward className="w-4 h-4 text-slate-400" /> :
-    <XCircle className="w-4 h-4 text-red-500" />;
+    r.status === "created" ? <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> :
+    r.status === "skipped" ? <SkipForward className="w-4 h-4 text-muted-foreground" /> :
+    <XCircle className="w-4 h-4 text-destructive" />;
   const label =
     r.status === "created"
       ? "Үүслээ"
@@ -542,204 +574,167 @@ function ResultRow({ r }: { r: SyncResult }) {
       : "Алдаа";
 
   return (
-    <tr className="border-b border-slate-100 last:border-0">
-      <td className="py-2 px-3 font-mono text-xs text-slate-500">{r.key}</td>
-      <td className="py-2 px-3 text-sm text-slate-700 max-w-xs truncate">
-        {r.summary}
-      </td>
-      <td className="py-2 px-3 text-sm">
-        <span className="inline-flex items-center gap-1.5">{icon} {label}</span>
-      </td>
-      <td className="py-2 px-3 text-sm">
+    <TableRow>
+      <TableCell className="px-3 font-mono text-xs text-muted-foreground">
+        {r.key}
+      </TableCell>
+      <TableCell className="px-3 max-w-xs truncate">{r.summary}</TableCell>
+      <TableCell className="px-3">
+        <span className="inline-flex items-center gap-1.5">
+          {icon} {label}
+        </span>
+      </TableCell>
+      <TableCell className="px-3">
         {r.status === "created" && r.taskUrl ? (
           <a
             href={r.taskUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline text-xs"
+            className="text-primary hover:underline text-xs"
           >
             Planner харах →
           </a>
         ) : r.status === "error" ? (
-          <span className="text-red-500 text-xs">{r.error}</span>
+          <span className="text-destructive text-xs">{r.error}</span>
         ) : null}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ── Sync summary stat ─────────────────────────────────────────────────────────
+function StatCard({
+  value,
+  label,
+  icon,
+  className,
+}: {
+  value: number;
+  label: string;
+  icon: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={cn("py-4 gap-1 text-center", className)}>
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="inline-flex items-center justify-center gap-1 text-xs">
+        {icon} {label}
+      </div>
+    </Card>
   );
 }
 
 // ── Teams Report Panel ────────────────────────────────────────────────────────
 
-const REPORT_BUTTONS: {
-  type: ReportType;
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  hoverColor: string;
-}[] = [
-  { type: "morning", label: "Өглөөний тайлан",      icon: <Sun className="w-4 h-4" />,           color: "bg-amber-500",   hoverColor: "hover:bg-amber-600" },
-  { type: "evening", label: "Оройн тайлан",          icon: <Moon className="w-4 h-4" />,          color: "bg-indigo-500",  hoverColor: "hover:bg-indigo-600" },
-  { type: "daily",   label: "Өдрийн тойм",           icon: <ClipboardList className="w-4 h-4" />, color: "bg-slate-500",   hoverColor: "hover:bg-slate-600" },
-  { type: "team",    label: "Багийн нэгдсэн тайлан", icon: <BarChart3 className="w-4 h-4" />,     color: "bg-emerald-600", hoverColor: "hover:bg-emerald-700" },
-];
-
 interface TeamsReportResult {
   type: ReportType;
   sent: boolean;
-  preview: string;   // мессежийн текст
+  preview: string;
 }
 
 function TeamsPanel() {
-  const [loadingType, setLoadingType] = useState<string | null>(null);
+  const [loading, setLoading] = useState<"preview" | "send" | null>(null);
   const [result, setResult] = useState<TeamsReportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handlePreview = async (type: ReportType) => {
-    setLoadingType(`preview-${type}`);
+  const handlePreview = async () => {
+    setLoading("preview");
     setError(null);
     setResult(null);
     try {
-      const res = await fetch(`/api/teams/report?type=${type}`);
+      const res = await fetch("/api/teams/report?type=digest");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Алдаа гарлаа");
-
-      // team → data.message, бусад → data.reports[0].message эсвэл нэгтгэнэ
-      let preview: string;
-      if (type === "team") {
-        preview = data.message ?? "";
-      } else {
-        preview = (data.reports ?? [])
-          .map((r: { displayName: string; message: string }) => `**${r.displayName}**\n${r.message}`)
-          .join("\n\n---\n\n");
-      }
-      setResult({ type, sent: false, preview });
+      setResult({ type: "digest", sent: false, preview: data.message ?? "" });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingType(null);
+      setLoading(null);
     }
   };
 
-  const handleSend = async (type: ReportType) => {
-    setLoadingType(`send-${type}`);
+  const handleSend = async () => {
+    setLoading("send");
     setError(null);
     setResult(null);
     try {
       const res = await fetch("/api/teams/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, send: true }),
+        body: JSON.stringify({ type: "digest", send: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Алдаа гарлаа");
-
-      let preview: string;
-      if (type === "team") {
-        preview = data.message ?? "";
-      } else {
-        preview = (data.reports ?? [])
-          .map((r: { displayName: string; message: string }) => `**${r.displayName}**\n${r.message}`)
-          .join("\n\n---\n\n");
-      }
-      setResult({ type, sent: true, preview });
+      setResult({ type: "digest", sent: true, preview: data.message ?? "" });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingType(null);
+      setLoading(null);
     }
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-        <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
+    <Card className="py-0 gap-0">
+      <div className="px-5 py-4 border-b flex items-center gap-2">
+        <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center">
           <MessageSquare className="w-4 h-4" />
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-slate-800">Teams тайлан</h2>
-          <p className="text-xs text-slate-400">
-            Planner-аас таск уншиж Teams-д мессеж илгээнэ
+          <h2 className="text-sm font-semibold">Teams өдрийн digest</h2>
+          <p className="text-xs text-muted-foreground">
+            Today&apos;s focus · Who&apos;s on what · Yesterday&apos;s wins — товч дарж илгээнэ
           </p>
         </div>
       </div>
 
-      {/* Button grid */}
       <div className="p-5 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {REPORT_BUTTONS.map((btn) => {
-            const isLoadingPreview = loadingType === `preview-${btn.type}`;
-            const isLoadingSend    = loadingType === `send-${btn.type}`;
-            const busy             = isLoadingPreview || isLoadingSend;
-
-            return (
-              <div
-                key={btn.type}
-                className="border border-slate-100 rounded-lg p-4 space-y-3 hover:border-slate-200 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-slate-600">
-                  {btn.icon}
-                  <span className="text-sm font-medium text-slate-700">{btn.label}</span>
-                </div>
-                <div className="flex gap-2">
-                  {/* Preview */}
-                  <button
-                    onClick={() => handlePreview(btn.type)}
-                    disabled={!!loadingType}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isLoadingPreview ? (
-                      <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full" />
-                    ) : (
-                      <><Eye className="w-3 h-3" /> Preview</>
-                    )}
-                  </button>
-                  {/* Send */}
-                  <button
-                    onClick={() => handleSend(btn.type)}
-                    disabled={!!loadingType}
-                    className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white ${btn.color} ${btn.hoverColor} disabled:opacity-40 disabled:cursor-not-allowed transition-colors`}
-                  >
-                    {isLoadingSend ? (
-                      <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
-                    ) : (
-                      <><Send className="w-3 h-3" /> Teams-д илгээх</>
-                    )}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handlePreview}
+            disabled={!!loading}
+          >
+            {loading === "preview" ? <Spinner /> : <Eye />}
+            Preview
+          </Button>
+          <Button
+            size="lg"
+            onClick={handleSend}
+            disabled={!!loading}
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            {loading === "send" ? <Spinner /> : <Send />}
+            Teams-д илгээх
+          </Button>
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-xs text-red-700">
-            <strong>Алдаа:</strong> {error}
-          </div>
+          <Alert variant="destructive">
+            <XCircle />
+            <AlertTitle>Алдаа</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
-        {/* Result preview */}
         {result && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              {result.sent ? (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                  <CheckCheck className="w-3.5 h-3.5" /> Teams-д амжилттай илгээлээ
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
-                  <Eye className="w-3.5 h-3.5" /> Preview — илгээгээгүй
-                </span>
-              )}
-            </div>
-            <pre className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs text-slate-700 whitespace-pre-wrap font-sans leading-relaxed max-h-80 overflow-y-auto">
+            {result.sent ? (
+              <Badge variant="secondary" className={tone.emerald}>
+                <CheckCheck /> Teams-д амжилттай илгээлээ
+              </Badge>
+            ) : (
+              <Badge variant="outline">
+                <Eye /> Preview — илгээгээгүй
+              </Badge>
+            )}
+            <pre className="bg-muted/50 border rounded-lg px-4 py-3 text-xs whitespace-pre-wrap font-sans leading-relaxed max-h-96 overflow-y-auto">
               {result.preview}
             </pre>
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -763,6 +758,15 @@ export default function Home() {
   } | null>(null);
   const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, { status: string; taskId: string }>>(new Map());
   const [downloading, setDownloading] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+  const [completeSummary, setCompleteSummary] = useState<{
+    completed: number;
+    open: number;
+    errors: number;
+    checked: number;
+    results: { key: string; status: string; jiraStatus?: string; error?: string }[];
+  } | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string>(ALL);
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -930,6 +934,46 @@ export default function Home() {
     }
   };
 
+  // ── Jira хаагдсан → Planner Complete ──
+  const completeResolvedInPlanner = async () => {
+    setCompleting(true);
+    setCompleteError(null);
+    setCompleteSummary(null);
+    try {
+      const res = await fetch("/api/planner/complete-resolved", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Complete хийхэд алдаа гарлаа");
+
+      setCompleteSummary({
+        completed: data.completed ?? 0,
+        open: data.open ?? 0,
+        errors: data.errors ?? 0,
+        checked: data.checked ?? 0,
+        results: data.results ?? [],
+      });
+
+      // Planner map шинэчлэх
+      setPlannerStatusMap((prev) => {
+        const next = new Map(prev);
+        for (const r of data.results ?? []) {
+          if (r.status === "completed") {
+            const cur = next.get(r.key);
+            if (cur) next.set(r.key, { ...cur, status: "Completed" });
+            else next.set(r.key, { status: "Completed", taskId: r.taskId ?? "" });
+          }
+        }
+        return next;
+      });
+
+      // Нээлттэй жагсаалтыг ч шинэчилнэ (хаагдсан ticket арилах)
+      await loadTickets({ preserveUi: true });
+    } catch (e: unknown) {
+      setCompleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   // ── Download Excel report ──
   const downloadReport = async () => {
     setDownloading(true);
@@ -976,127 +1020,151 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-screen bg-muted/40 font-sans">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+      <header className="bg-card border-b px-6 py-4 flex items-center gap-3">
+        <div className="w-8 h-8 bg-primary text-primary-foreground rounded-lg flex items-center justify-center font-bold text-sm">
           J→P
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">
-            Jira → Microsoft Planner
-          </h1>
-          <p className="text-xs text-slate-500">
-            DC project -- GP team
-          </p>
+          <h1 className="text-lg font-semibold">Jira → Microsoft Planner</h1>
+          <p className="text-xs text-muted-foreground">DC project -- GP team</p>
+        </div>
+        <div className="ml-auto">
+          <ThemeToggle />
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         {/* Controls */}
         <div className="flex items-center gap-3">
-          <button
+          <Button
+            variant="outline"
+            size="lg"
             onClick={() => loadTickets({ preserveUi: true })}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={cn(loading && "animate-spin")} />
             {loading ? "Татаж байна…" : "Шинэчлэх"}
-          </button>
+          </Button>
 
           {hasData && (
-            <button
+            <Button
+              size="lg"
               onClick={syncToPlanner}
               disabled={syncing || selected.size === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
             >
               {syncing ? (
                 <>
-                  <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                  Sync хийж байна…
+                  <Spinner /> Sync хийж байна…
                 </>
               ) : (
                 `Planner-д нэмэх${selected.size > 0 ? ` (${selected.size})` : ""}`
               )}
-            </button>
+            </Button>
           )}
 
-          <button
-            onClick={downloadReport}
-            disabled={downloading}
-            className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={completeResolvedInPlanner}
+            disabled={completing || loading}
+            title="Planner дээрх task-уудыг Jira-тай тулгаж, хаагдсаныг Complete болгоно"
           >
-            {downloading ? (
+            {completing ? (
               <>
-                <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
-                Татаж байна…
+                <Spinner /> Шалгаж байна…
               </>
             ) : (
               <>
-                <Download className="w-4 h-4" />
-                Өдрийн тайлан (.xlsx)
+                <CheckCheck /> Хаагдсаныг Complete
               </>
             )}
-          </button>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={downloadReport}
+            disabled={downloading}
+            className="ml-auto"
+          >
+            {downloading ? (
+              <>
+                <Spinner /> Татаж байна…
+              </>
+            ) : (
+              <>
+                <Download /> Өдрийн тайлан (.xlsx)
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Errors */}
         {fetchError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-            <strong>Алдаа:</strong> {fetchError}
-          </div>
+          <Alert variant="destructive">
+            <XCircle />
+            <AlertTitle>Алдаа</AlertTitle>
+            <AlertDescription>{fetchError}</AlertDescription>
+          </Alert>
         )}
         {syncError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-            <strong>Sync алдаа:</strong> {syncError}
-          </div>
+          <Alert variant="destructive">
+            <XCircle />
+            <AlertTitle>Sync алдаа</AlertTitle>
+            <AlertDescription>{syncError}</AlertDescription>
+          </Alert>
+        )}
+        {completeError && (
+          <Alert variant="destructive">
+            <XCircle />
+            <AlertTitle>Complete алдаа</AlertTitle>
+            <AlertDescription>{completeError}</AlertDescription>
+          </Alert>
+        )}
+        {completeSummary && (
+          <Alert>
+            <CheckCircle2 />
+            <AlertTitle>Jira → Planner Complete</AlertTitle>
+            <AlertDescription>
+              Шалгасан: {completeSummary.checked} · Completed: {completeSummary.completed} ·
+              Нээлттэй: {completeSummary.open} · Алдаа: {completeSummary.errors}
+              {completeSummary.results.filter((r) => r.status === "completed").length > 0 && (
+                <span className="block mt-1 text-muted-foreground">
+                  {completeSummary.results
+                    .filter((r) => r.status === "completed")
+                    .map((r) => r.key)
+                    .join(", ")}
+                </span>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Tabs + table */}
         {hasData && (
           <div className="space-y-0">
             {/* Tab bar */}
-            <div className="flex gap-1 border-b border-slate-200">
-              {/* All tab */}
-              <button
-                onClick={() => setActiveTab("all")}
-                className={`px-4 py-2 text-sm font-medium rounded-t-lg border transition-colors ${
-                  activeTab === "all"
-                    ? "bg-white border-slate-200 border-b-white text-blue-600 -mb-px"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                Бүгд
-                <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 rounded-full px-1.5 py-0.5">
-                  {allTickets.length}
-                </span>
-              </button>
+            <div className="flex items-center gap-3">
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList>
+                  <TabsTrigger value="all">
+                    Бүгд
+                    <Badge variant="secondary">{allTickets.length}</Badge>
+                  </TabsTrigger>
+                  {byPerson.map((p) => (
+                    <TabsTrigger key={p.email} value={p.email}>
+                      {p.displayName}
+                      <Badge variant="secondary">{p.tickets.length}</Badge>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
 
-              {/* Per-person tabs */}
-              {byPerson.map((p) => (
-                <button
-                  key={p.email}
-                  onClick={() => setActiveTab(p.email)}
-                  className={`px-4 py-2 text-sm font-medium rounded-t-lg border transition-colors ${
-                    activeTab === p.email
-                      ? "bg-white border-slate-200 border-b-white text-blue-600 -mb-px"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  {p.displayName}
-                  <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 rounded-full px-1.5 py-0.5">
-                    {p.tickets.length}
-                  </span>
-                </button>
-              ))}
-
-              {/* Selected count pill */}
               {selected.size > 0 && (
-                <div className="ml-auto self-center pr-1">
-                  <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded-full">
-                    {selected.size} сонгогдсон
-                  </span>
-                </div>
+                <Badge className="ml-auto">{selected.size} сонгогдсон</Badge>
               )}
             </div>
 
@@ -1133,69 +1201,61 @@ export default function Home() {
         {summary && (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-4 text-center">
-                <div className="text-2xl font-bold text-emerald-700">
-                  {summary.created}
-                </div>
-                <div className="inline-flex items-center justify-center gap-1 text-xs text-emerald-600 mt-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Амжилттай үүссэн
-                </div>
-              </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-center">
-                <div className="text-2xl font-bold text-slate-600">
-                  {summary.skipped}
-                </div>
-                <div className="inline-flex items-center justify-center gap-1 text-xs text-slate-500 mt-1">
-                  <SkipForward className="w-3.5 h-3.5" /> Алгасагдсан (давхардал)
-                </div>
-              </div>
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-4 text-center">
-                <div className="text-2xl font-bold text-red-600">
-                  {summary.errors}
-                </div>
-                <div className="inline-flex items-center justify-center gap-1 text-xs text-red-500 mt-1"><XCircle className="w-3.5 h-3.5" /> Алдаатай</div>
-              </div>
+              <StatCard
+                value={summary.created}
+                label="Амжилттай үүссэн"
+                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                className={tone.emerald}
+              />
+              <StatCard
+                value={summary.skipped}
+                label="Алгасагдсан (давхардал)"
+                icon={<SkipForward className="w-3.5 h-3.5" />}
+                className={tone.neutral}
+              />
+              <StatCard
+                value={summary.errors}
+                label="Алдаатай"
+                icon={<XCircle className="w-3.5 h-3.5" />}
+                className={tone.red}
+              />
             </div>
 
             {results && results.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <span className="text-sm font-medium text-slate-700">
-                    Дэлгэрэнгүй үр дүн
-                  </span>
+              <Card className="py-0 gap-0">
+                <div className="px-4 py-3 border-b">
+                  <span className="text-sm font-medium">Дэлгэрэнгүй үр дүн</span>
                 </div>
-                <table className="w-full">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                        Key
-                      </th>
-                      <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                        Гарчиг
-                      </th>
-                      <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                        Үр дүн
-                      </th>
-                      <th className="py-2 px-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                        Холбоос / Алдаа
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow className="hover:bg-transparent">
+                      {["Key", "Гарчиг", "Үр дүн", "Холбоос / Алдаа"].map((c) => (
+                        <TableHead
+                          key={c}
+                          className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                        >
+                          {c}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {results.map((r) => (
                       <ResultRow key={r.key} r={r} />
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
+              </Card>
             )}
           </div>
         )}
 
         {/* Empty state */}
         {!loading && !hasData && !fetchError && (
-          <div className="text-center py-20 text-slate-400">
-            <div className="flex items-center justify-center mb-3 text-slate-300"><ClipboardList className="w-12 h-12" /></div>
+          <div className="text-center py-20 text-muted-foreground">
+            <div className="flex items-center justify-center mb-3 opacity-50">
+              <ClipboardList className="w-12 h-12" />
+            </div>
             <p className="text-sm font-bold">
               &ldquo;Jira ticket татах&rdquo; товчийг дарж эхлэнэ үү
             </p>
