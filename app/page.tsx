@@ -20,6 +20,7 @@ import type { ReportType } from "@/lib/planner-report";
 import { adfToPlainText } from "@/lib/adf";
 import { getRequestTypeName } from "@/lib/request-type";
 import { cn } from "@/lib/utils";
+import { PlannerSchedule } from "@/components/planner-schedule";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -768,6 +769,7 @@ export default function Home() {
     results: { key: string; status: string; jiraStatus?: string; error?: string }[];
   } | null>(null);
   const [account, setAccount] = useState<{ email: string; name: string } | null>(null);
+  const [view, setView] = useState<"tickets" | "schedule">("tickets");
   const [requestTypeFilter, setRequestTypeFilter] = useState<string>(ALL);
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -1054,7 +1056,18 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className={cn("mx-auto space-y-6", view === "schedule" ? "max-w-[90rem] px-3 py-4 sm:px-6 sm:py-8" : "max-w-6xl px-4 py-6 sm:px-6 sm:py-8")}>
+        <Tabs value={view} onValueChange={(value) => setView(value as "tickets" | "schedule")}>
+          <TabsList>
+            <TabsTrigger value="tickets">Тикет</TabsTrigger>
+            <TabsTrigger value="schedule">Хуваарь</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {view === "schedule" ? (
+          <PlannerSchedule />
+        ) : (
+        <>
         {/* Controls */}
         <div className="flex items-center gap-3">
           <Button
@@ -1281,8 +1294,10 @@ export default function Home() {
           </div>
         )}
 
-        {/* Teams report panel — always visible */}
-        <TeamsPanel />
+        </>
+        )}
+
+        {view === "tickets" && <TeamsPanel />}
       </main>
     </div>
   );
