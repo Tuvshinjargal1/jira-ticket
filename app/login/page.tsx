@@ -33,12 +33,12 @@ export default async function LoginPage({
           </div>
           <div>
             <h1 className="text-lg font-semibold">Jira → Microsoft Planner</h1>
-            <p className="text-xs text-muted-foreground">Ажлын бүртгэлээр нэвтрэх</p>
+            {/* <p className="text-xs text-muted-foreground">Ажлын бүртгэлээр нэвтрэх</p> */}
           </div>
         </div>
 
         <p className="mb-6 text-sm text-muted-foreground">
-          Zerotech-ийн Microsoft бүртгэлээр нэвтэрнэ. Имэйл нь @zerotech.mn байх ёстой.
+          Microsoft бүртгэлээр нэвтэрнэ.
         </p>
 
         {message && (
@@ -51,7 +51,7 @@ export default async function LoginPage({
           href="/api/auth/microsoft"
           className={cn(buttonVariants({ size: "lg" }), "w-full")}
         >
-          @zerotech.mn-ээр нэвтрэх
+          Нэвтрэх
         </a>
       </div>
     </div>
