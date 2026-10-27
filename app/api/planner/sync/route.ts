@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMsToken, graphGet, graphPost, graphPatch, toPlannerPriority } from "@/lib/graph";
 import { extractPlainText, PARTICIPANTS } from "@/lib/jira";
 import type { TicketWithParticipants, SyncResult } from "@/types";
+import { assertApiSession } from "@/lib/session";
 
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
 const GP_GROUP_NAME = process.env.MS_GROUP_NAME ?? "GP Team";
@@ -104,6 +105,9 @@ async function taskAlreadyExists(
 // ── Main POST handler ────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const body = await req.json();
     const tickets: TicketWithParticipants[] = body.tickets ?? [];

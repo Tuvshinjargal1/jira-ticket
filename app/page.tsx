@@ -8,7 +8,7 @@ import {
   Users, CheckCheck, User,
   ChevronDown, ChevronRight,
   Download, RefreshCw,
-  Filter, X, Loader2,
+  Filter, X, Loader2, LogOut,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -767,6 +767,7 @@ export default function Home() {
     checked: number;
     results: { key: string; status: string; jiraStatus?: string; error?: string }[];
   } | null>(null);
+  const [account, setAccount] = useState<{ email: string; name: string } | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string>(ALL);
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -829,6 +830,15 @@ export default function Home() {
 
   // Хуудсанэ ачаахд шууд ачаах
   useEffect(() => { loadTickets(); }, [loadTickets]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { email?: string; name?: string } | null) => {
+        if (data?.email && data.name) setAccount({ email: data.email, name: data.name });
+      })
+      .catch(() => {});
+  }, []);
 
   // ── Selection ──
   const toggleOne = (key: string) => {
@@ -1030,7 +1040,16 @@ export default function Home() {
           <h1 className="text-lg font-semibold">Jira → Microsoft Planner</h1>
           <p className="text-xs text-muted-foreground">DC project -- GP team</p>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          {account && (
+            <span className="text-xs text-muted-foreground">{account.email}</span>
+          )}
+          <form action="/api/auth/logout" method="post">
+            <Button type="submit" variant="outline" size="sm">
+              <LogOut />
+              Гарах
+            </Button>
+          </form>
           <ThemeToggle />
         </div>
       </header>

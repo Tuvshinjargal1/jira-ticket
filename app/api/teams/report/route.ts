@@ -15,6 +15,7 @@ import {
   sendTeamsMultiSection,
 } from "@/lib/teams-webhook";
 import { PARTICIPANTS } from "@/lib/jira";
+import { assertApiSession } from "@/lib/session";
 
 const MEMBERS = PARTICIPANTS;
 
@@ -29,6 +30,9 @@ function isDigestType(type: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(req.url);
     const type = (searchParams.get("type") ?? "digest") as ReportType;
@@ -64,6 +68,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const body = (await req.json().catch(() => ({}))) as {
       type?: string;

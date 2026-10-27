@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { adfToPlainText } from "@/lib/adf";
 import { getJiraAuthHeader } from "@/lib/jira";
 import type { JiraTicket } from "@/types";
+import { assertApiSession } from "@/lib/session";
 
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
 
@@ -248,6 +249,9 @@ function buildDailySheet(
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function GET() {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const today = new Date();
     const dateSerial = toExcelSerial(today);

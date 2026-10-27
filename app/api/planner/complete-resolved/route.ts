@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getJiraAuthHeader } from "@/lib/jira";
 import { getMsToken, graphGet, graphPatch } from "@/lib/graph";
+import { assertApiSession } from "@/lib/session";
 
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
 const GP_GROUP_NAME = process.env.MS_GROUP_NAME ?? "GP Team";
@@ -116,6 +117,9 @@ async function markPlannerCompleted(
  * хаагдсан бол Complete болгоно.
  */
 export async function POST() {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const token = await getMsToken();
     const planId = await resolvePlanId(token);

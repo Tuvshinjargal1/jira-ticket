@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMsToken, graphGet, graphPatch } from "@/lib/graph";
+import { assertApiSession } from "@/lib/session";
 
 const GP_GROUP_NAME = process.env.MS_GROUP_NAME ?? "GP Team";
 const GP_PLAN_NAME = process.env.MS_PLAN_NAME ?? "GP Team";
@@ -35,6 +36,9 @@ function toStatusLabel(percentComplete: number): string {
 
 /** Planner-д байгаа бүх [JIRA-KEY] task-ийн key болон статусыг буцаана */
 export async function GET() {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const token = await getMsToken();
     const planId = await resolvePlanId(token);
@@ -69,6 +73,9 @@ function toPercentComplete(status: string): number {
 
 /** Planner task-ийн статусыг шинэчилнэ */
 export async function PATCH(req: NextRequest) {
+  const denied = await assertApiSession();
+  if (denied) return denied;
+
   try {
     const { taskId, status } = (await req.json()) as { taskId: string; status: string };
     if (!taskId || !status) {
