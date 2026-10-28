@@ -5,7 +5,7 @@ import {
   ClipboardList,
   MessageSquare, Eye, Send,
   CheckCircle2, SkipForward, XCircle,
-  Users, CheckCheck, User,
+  Users, CheckCheck,
   ChevronDown, ChevronRight,
   Download, RefreshCw,
   Filter, X, Loader2, LogOut,
@@ -294,12 +294,6 @@ function TicketRow({
               {dueError && <p className="text-xs text-destructive">{dueError}</p>}
             </>
           )}
-          {f.assignee && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground font-medium">
-              <User className="w-3 h-3" />
-              {f.assignee.displayName}
-            </span>
-          )}
           {showParticipants && participants.length > 0 && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400">
               <Users className="w-3 h-3" />
@@ -311,9 +305,6 @@ function TicketRow({
             {plannerInfo?.taskId && <TicketSubtasks taskId={plannerInfo.taskId} />}
           </div>
         </div>
-      </TableCell>
-      <TableCell className="py-3 text-xs text-muted-foreground align-top">
-        {f.assignee?.displayName ?? "—"}
       </TableCell>
       <TableCell className="py-3 align-top">
         {requestType ? (
@@ -339,7 +330,6 @@ function TicketRow({
 const TICKET_COLUMNS = [
   "Key",
   "Гарчиг",
-  "Assignee",
   "Хүсэлтийн төрөл",
   "Статус",
   "Эрэмбэ",
