@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, ExternalLink, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import type { BoardTask, ChecklistItem } from "@/lib/planner-board";
 import { cn } from "@/lib/utils";
@@ -47,6 +47,37 @@ function dueLabel(dueDate: string | null, today: string): string {
   return `${when} · ${days} хоног үлдсэн`;
 }
 
+async function fetchBoard(completed: boolean, fresh: boolean): Promise<Board> {
+  const params = new URLSearchParams();
+  if (completed) params.set("completed", "1");
+  if (fresh) params.set("fresh", "1");
+  const query = params.toString();
+  const response = await fetch(`/api/planner/schedule${query ? `?${query}` : ""}`);
+  const data = (await response.json()) as Board & { error?: string };
+  if (!response.ok) throw new Error(data.error || "Хуваарь татаж чадсангүй");
+  return { planUrl: data.planUrl, people: data.people };
+}
+
+function mergeCompleted(open: Board, done: Board): Board {
+  const byName = new Map(open.people.map((person) => [person.name, new Map(person.tasks.map((task) => [task.id, task]))]));
+  for (const person of done.people) {
+    const tasks = byName.get(person.name) ?? new Map<string, BoardTask>();
+    for (const task of person.tasks) tasks.set(task.id, task);
+    byName.set(person.name, tasks);
+  }
+  const order = open.people.map((person) => person.name);
+  for (const person of done.people) {
+    if (!order.includes(person.name)) order.push(person.name);
+  }
+  return {
+    planUrl: open.planUrl,
+    people: order.map((name) => ({
+      name,
+      tasks: [...(byName.get(name)?.values() ?? [])],
+    })),
+  };
+}
+
 function compareTasks(a: BoardTask, b: BoardTask): number {
   if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1;
   if (a.dueDate) return -1;
@@ -64,6 +95,33 @@ function dueTone(dueDate: string | null, today: string): string {
 }
 
 const COLUMN_STORAGE_KEY = "planner-schedule-columns";
+const SCHEDULE_CACHE_MS = 3 * 60 * 1000;
+
+type ScheduleCache = {
+  fetchedAt: number;
+  board: Board;
+  checks: Record<string, ChecklistItem[]>;
+  doneLoaded: boolean;
+  showDone: boolean;
+};
+
+let scheduleCache: ScheduleCache | null = null;
+
+function readScheduleCache(): ScheduleCache | null {
+  if (!scheduleCache) return null;
+  if (Date.now() - scheduleCache.fetchedAt > SCHEDULE_CACHE_MS) {
+    scheduleCache = null;
+    return null;
+  }
+  return scheduleCache;
+}
+
+function rememberSchedule(next: Omit<ScheduleCache, "fetchedAt">) {
+  scheduleCache = {
+    fetchedAt: scheduleCache?.fetchedAt ?? Date.now(),
+    ...next,
+  };
+}
 
 function readHiddenColumns(): string[] {
   try {
@@ -86,6 +144,8 @@ export function PlannerSchedule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
+  const [doneLoaded, setDoneLoaded] = useState(false);
+  const [loadingDone, setLoadingDone] = useState(false);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [columnsReady, setColumnsReady] = useState(false);
   const [openTask, setOpenTask] = useState<string | null>(null);
@@ -94,16 +154,27 @@ export function PlannerSchedule() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [savingDue, setSavingDue] = useState<string | null>(null);
+  const showDoneRef = useRef(false);
   const today = todayInUlaanbaatar();
+  showDoneRef.current = showDone;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (fresh = false) => {
     setLoading(true);
     setError(null);
+    setDoneLoaded(false);
+    if (fresh) scheduleCache = null;
     try {
-      const response = await fetch("/api/planner/schedule");
-      const data = (await response.json()) as Board & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Хуваарь татаж чадсангүй");
-      setBoard({ planUrl: data.planUrl, people: data.people });
+      const openBoard = await fetchBoard(false, fresh);
+      if (!showDoneRef.current) {
+        setBoard(openBoard);
+        rememberSchedule({ board: openBoard, checks: {}, doneLoaded: false, showDone: false });
+        return;
+      }
+      const completed = await fetchBoard(true, fresh);
+      const merged = mergeCompleted(openBoard, completed);
+      setBoard(merged);
+      setDoneLoaded(true);
+      rememberSchedule({ board: merged, checks: {}, doneLoaded: true, showDone: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -111,9 +182,48 @@ export function PlannerSchedule() {
     }
   }, []);
 
+  async function loadCompleted() {
+    setLoadingDone(true);
+    setError(null);
+    try {
+      const data = await fetchBoard(true, false);
+      setBoard((current) => {
+        const merged = current ? mergeCompleted(current, data) : data;
+        rememberSchedule({
+          board: merged,
+          checks,
+          doneLoaded: true,
+          showDone: true,
+        });
+        return merged;
+      });
+      setDoneLoaded(true);
+      setShowDone(true);
+    } catch (err: unknown) {
+      setShowDone(false);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingDone(false);
+    }
+  }
+
   useEffect(() => {
+    const cached = readScheduleCache();
+    if (cached) {
+      setBoard(cached.board);
+      setChecks(cached.checks);
+      setDoneLoaded(cached.doneLoaded);
+      setShowDone(cached.showDone);
+      setLoading(false);
+      return;
+    }
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (loading || !board) return;
+    rememberSchedule({ board, checks, doneLoaded, showDone });
+  }, [board, checks, doneLoaded, showDone, loading]);
 
   useEffect(() => {
     setHiddenColumns(readHiddenColumns());
@@ -303,13 +413,24 @@ export function PlannerSchedule() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" onClick={load} disabled={loading}>
+        <Button variant="outline" onClick={() => load(true)} disabled={loading}>
           <RefreshCw className={cn(loading && "animate-spin")} />
           Шинэчлэх
         </Button>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Checkbox checked={showDone} onCheckedChange={(value) => setShowDone(value === true)} />
-          Дууссаныг харуулах
+          <Checkbox
+            checked={showDone}
+            disabled={loading || loadingDone}
+            onCheckedChange={(value) => {
+              const next = value === true;
+              if (next && !doneLoaded) {
+                loadCompleted();
+                return;
+              }
+              setShowDone(next);
+            }}
+          />
+          {loadingDone ? "Дууссаныг татаж байна…" : "Дууссаныг харуулах"}
         </label>
         {board && (
           <a

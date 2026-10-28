@@ -5,6 +5,18 @@ const ENV_PLAN_ID = process.env.MS_PLAN_ID ?? "";
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL!;
 
 const PERSON_ORDER = ["Tuvshinjargal", "Nandintsetseg", "Khuslen", "Khulan"];
+const BOARD_CACHE_MS = 3 * 60 * 1000;
+
+type BoardData = {
+  planUrl: string;
+  people: { name: string; tasks: BoardTask[] }[];
+};
+
+const boardCache = new Map<"open" | "completed", { at: number; board: BoardData }>();
+
+export function invalidateBoardCache() {
+  boardCache.clear();
+}
 
 export type BoardTask = {
   id: string;
@@ -115,10 +127,15 @@ async function jiraDueDates(keys: string[]): Promise<Map<string, string | null>>
   return due;
 }
 
-export async function loadBoard(): Promise<{
-  planUrl: string;
-  people: { name: string; tasks: BoardTask[] }[];
-}> {
+export async function loadBoard(
+  scope: "open" | "completed" = "open",
+  options?: { fresh?: boolean }
+): Promise<BoardData> {
+  const cached = boardCache.get(scope);
+  if (!options?.fresh && cached && Date.now() - cached.at < BOARD_CACHE_MS) {
+    return cached.board;
+  }
+
   const token = await getMsToken();
   const planId = await resolvePlanId(token);
   const [tasks, bucketData] = await Promise.all([
@@ -128,8 +145,13 @@ export async function loadBoard(): Promise<{
     }>,
   ]);
 
+  const visible = tasks.filter((task) => {
+    const done = (task.percentComplete ?? 0) >= 100;
+    return scope === "completed" ? done : !done;
+  });
+
   const bucketName = new Map((bucketData.value ?? []).map((bucket) => [bucket.id, bucket.name]));
-  const keys = tasks.map((task) => jiraKey(task.title)).filter((key): key is string => !!key);
+  const keys = visible.map((task) => jiraKey(task.title)).filter((key): key is string => !!key);
   let dues = new Map<string, string | null>();
   try {
     dues = await jiraDueDates(keys);
@@ -142,7 +164,7 @@ export async function loadBoard(): Promise<{
     if (!grouped.has(name.name)) grouped.set(name.name, []);
   }
 
-  for (const task of tasks) {
+  for (const task of visible) {
     const bucket = bucketName.get(task.bucketId ?? "") ?? "Хувиарилаагүй";
     const key = jiraKey(task.title);
     const jiraDue = key ? dues.get(key) ?? null : null;
@@ -177,10 +199,12 @@ export async function loadBoard(): Promise<{
     }))
     .sort((a, b) => personRank(a.name) - personRank(b.name) || a.name.localeCompare(b.name));
 
-  return {
+  const board = {
     planUrl: `https://planner.cloud.microsoft/webui/plan/${planId}/view/board`,
     people,
   };
+  boardCache.set(scope, { at: Date.now(), board });
+  return board;
 }
 
 export function assertPlannerTaskId(taskId: string) {
@@ -283,6 +307,7 @@ export async function setTaskDueDate(taskId: string, dueDate: string | null): Pr
     }
   }
 
+  invalidateBoardCache();
   const token = await getMsToken();
   const task = (await graphGet(token, `/planner/tasks/${taskId}`)) as { "@odata.etag": string };
   await graphPatch(
