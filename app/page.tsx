@@ -21,6 +21,7 @@ import { adfToPlainText } from "@/lib/adf";
 import { getRequestTypeName } from "@/lib/request-type";
 import { cn } from "@/lib/utils";
 import { PlannerSchedule } from "@/components/planner-schedule";
+import { TicketDueDate } from "@/components/ticket-due";
 import { TicketSubtasks } from "@/components/ticket-subtasks";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -124,6 +125,8 @@ function ColorBadge({
 
 const PLANNER_STATUSES = ["Not Started", "In Progress", "Completed"] as const;
 
+type PlannerTicket = { status: string; taskId: string; dueDate: string | null };
+
 const PLANNER_STATUS_STYLES: Record<string, string> = {
   "Completed": tone.neutral,
   "In Progress": tone.blue,
@@ -142,13 +145,13 @@ function CommentsDropdown({ ticket }: { ticket: JiraTicket }) {
   if (!comments.length) return null;
 
   return (
-    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+    <div className="contents">
       <Button
         variant="ghost"
         size="xs"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="-ml-2 text-[11px] text-muted-foreground"
+        className="order-1 -ml-2 text-[11px] text-muted-foreground"
       >
         <MessageSquare />
         {comments.length} comment
@@ -156,7 +159,7 @@ function CommentsDropdown({ ticket }: { ticket: JiraTicket }) {
       </Button>
 
       {open && (
-        <div className="mt-1.5 rounded-md border bg-muted/40 divide-y">
+        <div className="order-2 mt-1.5 w-full basis-full rounded-md border bg-muted/40 divide-y">
           {comments.map((c, i) => {
             const body = adfToPlainText(c.body);
             const date = new Date(c.created).toLocaleString("mn-MN", {
@@ -195,19 +198,23 @@ function TicketRow({
   onToggle,
   plannerInfo,
   onStatusChange,
+  onDueChange,
 }: {
   ticket: JiraTicket & { participants?: string[] };
   showParticipants: boolean;
   isChecked: boolean;
   onToggle: (key: string) => void;
-  plannerInfo: { status: string; taskId: string } | undefined;
+  plannerInfo: PlannerTicket | undefined;
   onStatusChange: (key: string, taskId: string, newStatus: string) => void;
+  onDueChange: (key: string, taskId: string, value: string) => Promise<void>;
 }) {
   const f = ticket.fields;
   const created = new Date(f.created).toLocaleDateString("mn-MN");
   const requestType = getRequestTypeName(ticket);
   const participants = ticket.participants ?? [];
   const isSynced = !!plannerInfo;
+  const [savingDue, setSavingDue] = useState(false);
+  const [dueError, setDueError] = useState("");
 
   return (
     <TableRow
@@ -267,6 +274,26 @@ function TicketRow({
       <TableCell className="py-3 max-w-md whitespace-normal align-top">
         <div className="flex flex-col gap-1">
           <span className="text-sm line-clamp-2">{f.summary}</span>
+          {plannerInfo?.taskId && (
+            <>
+              <TicketDueDate
+                value={plannerInfo.dueDate}
+                disabled={savingDue}
+                onChange={async (value) => {
+                  setSavingDue(true);
+                  setDueError("");
+                  try {
+                    await onDueChange(ticket.key, plannerInfo.taskId, value);
+                  } catch (err: unknown) {
+                    setDueError(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    setSavingDue(false);
+                  }
+                }}
+              />
+              {dueError && <p className="text-xs text-destructive">{dueError}</p>}
+            </>
+          )}
           {f.assignee && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground font-medium">
               <User className="w-3 h-3" />
@@ -279,8 +306,10 @@ function TicketRow({
               {participants.join(", ")}
             </span>
           )}
-          <CommentsDropdown ticket={ticket} />
-          {plannerInfo?.taskId && <TicketSubtasks taskId={plannerInfo.taskId} />}
+          <div className="flex flex-wrap items-center" onClick={(e) => e.stopPropagation()}>
+            <CommentsDropdown ticket={ticket} />
+            {plannerInfo?.taskId && <TicketSubtasks taskId={plannerInfo.taskId} />}
+          </div>
         </div>
       </TableCell>
       <TableCell className="py-3 text-xs text-muted-foreground align-top">
@@ -343,14 +372,16 @@ function TicketTable({
   onToggleAll,
   plannerStatusMap,
   onStatusChange,
+  onDueChange,
 }: {
   tickets: (JiraTicket & { participants?: string[] })[];
   showParticipants: boolean;
   selected: Set<string>;
   onToggleOne: (key: string) => void;
   onToggleAll: (keys: string[]) => void;
-  plannerStatusMap: Map<string, { status: string; taskId: string }>;
+  plannerStatusMap: Map<string, PlannerTicket>;
   onStatusChange: (key: string, taskId: string, newStatus: string) => void;
+  onDueChange: (key: string, taskId: string, value: string) => Promise<void>;
 }) {
   const [completedOpen, setCompletedOpen] = useState(false);
 
@@ -375,6 +406,7 @@ function TicketTable({
         onToggle={onToggleOne}
         plannerInfo={plannerStatusMap.get(ticket.key)}
         onStatusChange={onStatusChange}
+        onDueChange={onDueChange}
       />
     ));
 
@@ -759,7 +791,7 @@ export default function Home() {
     skipped: number;
     errors: number;
   } | null>(null);
-  const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, { status: string; taskId: string }>>(new Map());
+  const [plannerStatusMap, setPlannerStatusMap] = useState<Map<string, PlannerTicket>>(new Map());
   const [downloading, setDownloading] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
@@ -819,9 +851,9 @@ export default function Home() {
       // Planner-д аль хэдийн байгаа task-уудыг тэмдэглэнэ
       if (plannerRes.ok) {
         const plannerData = await plannerRes.json();
-        const map = new Map<string, { status: string; taskId: string }>();
+        const map = new Map<string, PlannerTicket>();
         for (const t of (plannerData.tasks ?? [])) {
-          map.set(t.key, { status: t.status, taskId: t.taskId ?? "" });
+          map.set(t.key, { status: t.status, taskId: t.taskId ?? "", dueDate: t.dueDate ?? null });
         }
         setPlannerStatusMap(map);
       }
@@ -894,7 +926,7 @@ export default function Home() {
         setPlannerStatusMap((prev) => {
           const next = new Map(prev);
           for (const t of (refreshData.tasks ?? [])) {
-            next.set(t.key, { status: t.status, taskId: t.taskId ?? "" });
+            next.set(t.key, { status: t.status, taskId: t.taskId ?? "", dueDate: t.dueDate ?? null });
           }
           return next;
         });
@@ -904,7 +936,7 @@ export default function Home() {
           syncResults
             .filter((r) => r.status === "created" || r.status === "skipped")
             .forEach((r) => {
-              if (!next.has(r.key)) next.set(r.key, { status: "Not Started", taskId: "" });
+              if (!next.has(r.key)) next.set(r.key, { status: "Not Started", taskId: "", dueDate: null });
             });
           return next;
         });
@@ -948,6 +980,36 @@ export default function Home() {
     }
   };
 
+  const handleDueChange = async (key: string, taskId: string, value: string) => {
+    if (!taskId) return;
+    const dueDate = value || null;
+    let previous: string | null = null;
+    setPlannerStatusMap((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(key);
+      if (cur) {
+        previous = cur.dueDate;
+        next.set(key, { ...cur, dueDate });
+      }
+      return next;
+    });
+    const res = await fetch(`/api/planner/tasks/${taskId}/due`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueDate }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setPlannerStatusMap((prev) => {
+        const next = new Map(prev);
+        const cur = next.get(key);
+        if (cur) next.set(key, { ...cur, dueDate: previous });
+        return next;
+      });
+      throw new Error(data.error || "Огноо хадгалагдсангүй");
+    }
+  };
+
   // ── Jira хаагдсан → Planner Complete ──
   const completeResolvedInPlanner = async () => {
     setCompleting(true);
@@ -973,7 +1035,7 @@ export default function Home() {
           if (r.status === "completed") {
             const cur = next.get(r.key);
             if (cur) next.set(r.key, { ...cur, status: "Completed" });
-            else next.set(r.key, { status: "Completed", taskId: r.taskId ?? "" });
+            else next.set(r.key, { status: "Completed", taskId: r.taskId ?? "", dueDate: null });
           }
         }
         return next;
@@ -1227,6 +1289,7 @@ export default function Home() {
               onToggleAll={toggleGroup}
               plannerStatusMap={plannerStatusMap}
               onStatusChange={handleStatusChange}
+              onDueChange={handleDueChange}
             />
           </div>
         )}

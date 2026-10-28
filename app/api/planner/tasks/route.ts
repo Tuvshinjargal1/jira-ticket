@@ -27,6 +27,15 @@ async function resolvePlanId(token: string): Promise<string> {
   return plan.id;
 }
 
+function plannerDay(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${month}-${day}`;
+}
+
 /** percentComplete → хүний уншихад тохиромжтой статус */
 function toStatusLabel(percentComplete: number): string {
   if (percentComplete >= 100) return "Completed";
@@ -45,17 +54,22 @@ export async function GET() {
 
     const data = (await graphGet(
       token,
-      `/planner/plans/${planId}/tasks?$select=id,title,percentComplete`
-    )) as { value: { id: string; title: string; percentComplete: number }[] };
+      `/planner/plans/${planId}/tasks?$select=id,title,percentComplete,dueDateTime`
+    )) as { value: { id: string; title: string; percentComplete: number; dueDateTime?: string | null }[] };
 
     const keyPattern = /^\[([A-Z]+-\d+)\]/;
     const tasks = (data.value ?? [])
       .map((t) => {
         const match = keyPattern.exec(t.title);
         if (!match) return null;
-        return { key: match[1], status: toStatusLabel(t.percentComplete ?? 0), taskId: t.id };
+        return {
+          key: match[1],
+          status: toStatusLabel(t.percentComplete ?? 0),
+          taskId: t.id,
+          dueDate: plannerDay(t.dueDateTime),
+        };
       })
-      .filter((t): t is { key: string; status: string; taskId: string } => t !== null);
+      .filter((t): t is { key: string; status: string; taskId: string; dueDate: string | null } => t !== null);
 
     return NextResponse.json({ tasks });
   } catch (error: unknown) {

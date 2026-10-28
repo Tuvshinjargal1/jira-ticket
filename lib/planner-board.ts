@@ -300,6 +300,14 @@ export async function renameChecklistItem(
   return loadChecklist(taskId);
 }
 
+function assertDueDay(dueDate: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new Error("Огноо буруу");
+  const parsed = new Date(`${dueDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || plannerDay(parsed.toISOString()) !== dueDate) {
+    throw new Error("Огноо буруу");
+  }
+}
+
 export async function setChecklistChecked(
   taskId: string,
   itemId: string,
@@ -328,13 +336,7 @@ export async function setChecklistChecked(
 
 export async function setTaskDueDate(taskId: string, dueDate: string | null): Promise<void> {
   assertPlannerTaskId(taskId);
-  if (dueDate !== null) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new Error("Огноо буруу");
-    const parsed = new Date(`${dueDate}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime()) || plannerDay(parsed.toISOString()) !== dueDate) {
-      throw new Error("Огноо буруу");
-    }
-  }
+  if (dueDate !== null) assertDueDay(dueDate);
 
   invalidateBoardCache();
   const token = await getMsToken();

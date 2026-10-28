@@ -125,14 +125,14 @@ export function TicketSubtasks({ taskId }: { taskId: string }) {
   }
 
   return (
-    <div className="mt-1.5" onClick={(event) => event.stopPropagation()}>
+    <div className="contents">
       <Button
         type="button"
         variant="ghost"
         size="xs"
         onClick={toggleOpen}
         aria-expanded={open}
-        className="-ml-2 text-[11px] text-muted-foreground"
+        className="order-1 text-[11px] text-muted-foreground"
       >
         {open ? <ChevronDown /> : <ChevronRight />}
         task
@@ -140,7 +140,7 @@ export function TicketSubtasks({ taskId }: { taskId: string }) {
       </Button>
 
       {open && (
-        <div className="mt-1.5 space-y-2 rounded-md border bg-muted/40 p-2">
+        <div className="order-2 mt-1.5 w-full basis-full space-y-2 rounded-md border bg-muted/40 p-2">
           {!items && !error && (
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />

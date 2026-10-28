@@ -41,6 +41,7 @@ export function DueDatePicker({
   tone,
   disabled,
   onChange,
+  className,
 }: {
   value: string | null;
   today: string;
@@ -48,6 +49,7 @@ export function DueDatePicker({
   tone: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState((value ?? today).slice(0, 7));
@@ -100,7 +102,8 @@ export function DueDatePicker({
         className={cn(
           "mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
           tone,
-          disabled && "opacity-60"
+          disabled && "opacity-60",
+          className
         )}
       >
         <Calendar className="size-3.5" />
