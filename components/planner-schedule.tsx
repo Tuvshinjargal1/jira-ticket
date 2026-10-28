@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import type { BoardTask, ChecklistItem } from "@/lib/planner-board";
 import { cn } from "@/lib/utils";
 import { DueDatePicker } from "@/components/due-date-picker";
@@ -154,6 +154,7 @@ export function PlannerSchedule() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [savingDue, setSavingDue] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ taskId: string; itemId: string; text: string } | null>(null);
   const showDoneRef = useRef(false);
   const today = todayInUlaanbaatar();
   showDoneRef.current = showDone;
@@ -276,7 +277,7 @@ export function PlannerSchedule() {
     try {
       const response = await fetch(`/api/planner/tasks/${taskId}/checklist`);
       const data = (await response.json()) as { items?: ChecklistItem[]; error?: string };
-      if (!response.ok) throw new Error(data.error || "Дэд ажил татаж чадсангүй");
+      if (!response.ok) throw new Error(data.error || "task татаж чадсангүй");
       setChecks((prev) => ({ ...prev, [taskId]: data.items ?? [] }));
     } catch (err: unknown) {
       setCheckError((prev) => ({
@@ -306,7 +307,7 @@ export function PlannerSchedule() {
         body: JSON.stringify({ title }),
       });
       const data = (await response.json()) as { items?: ChecklistItem[]; error?: string };
-      if (!response.ok) throw new Error(data.error || "Дэд ажил нэмэгдсэнгүй");
+      if (!response.ok) throw new Error(data.error || "task нэмэгдсэнгүй");
       setChecks((prev) => ({ ...prev, [taskId]: data.items ?? [] }));
       setDrafts((prev) => ({ ...prev, [taskId]: "" }));
     } catch (err: unknown) {
@@ -373,7 +374,7 @@ export function PlannerSchedule() {
         body: JSON.stringify({ itemId: item.id }),
       });
       const data = (await response.json()) as { items?: ChecklistItem[]; error?: string };
-      if (!response.ok) throw new Error(data.error || "Дэд ажил устгагдсангүй");
+      if (!response.ok) throw new Error(data.error || "task устгагдсангүй");
       setChecks((prev) => ({ ...prev, [taskId]: data.items ?? [] }));
     } catch (err: unknown) {
       setChecks((prev) => ({ ...prev, [taskId]: previous }));
@@ -381,6 +382,34 @@ export function PlannerSchedule() {
         ...prev,
         [taskId]: err instanceof Error ? err.message : String(err),
       }));
+    }
+  }
+
+  async function renameSubtask(taskId: string, item: ChecklistItem, title: string) {
+    const text = title.trim();
+    if (!text || text === item.title) {
+      setEditing(null);
+      return;
+    }
+    setSaving(taskId);
+    setCheckError((prev) => ({ ...prev, [taskId]: "" }));
+    try {
+      const response = await fetch(`/api/planner/tasks/${taskId}/checklist`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id, title: text }),
+      });
+      const data = (await response.json()) as { items?: ChecklistItem[]; error?: string };
+      if (!response.ok) throw new Error(data.error || "task засагдсангүй");
+      setChecks((prev) => ({ ...prev, [taskId]: data.items ?? [] }));
+      setEditing(null);
+    } catch (err: unknown) {
+      setCheckError((prev) => ({
+        ...prev,
+        [taskId]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setSaving(null);
     }
   }
 
@@ -399,7 +428,7 @@ export function PlannerSchedule() {
         body: JSON.stringify({ itemId: item.id, isChecked: !item.isChecked }),
       });
       const data = (await response.json()) as { items?: ChecklistItem[]; error?: string };
-      if (!response.ok) throw new Error(data.error || "Дэд ажил шинэчлэгдсэнгүй");
+      if (!response.ok) throw new Error(data.error || "task шинэчлэгдсэнгүй");
       setChecks((prev) => ({ ...prev, [taskId]: data.items ?? [] }));
     } catch (err: unknown) {
       setChecks((prev) => ({ ...prev, [taskId]: previous }));
@@ -446,7 +475,7 @@ export function PlannerSchedule() {
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Хүссэн хүнийхээ баганыг нэмж, хасна. Хэний баганад багтахыг Planner дээр шийднэ. Дэд ажлыг
+        Хүссэн хүнийхээ баганыг нэмж, хасна. Хэний баганад багтахыг Planner дээр шийднэ. task-ийг
         энд бичвэл шууд харагдана.
       </p>
 
@@ -594,32 +623,67 @@ export function PlannerSchedule() {
                               {!items && !checkError[task.id] && (
                                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Loader2 className="size-3 animate-spin" />
-                                  Дэд ажил татаж байна…
+                                  task татаж байна…
                                 </p>
                               )}
                               {items?.length === 0 && (
-                                <p className="text-xs text-muted-foreground">Дэд ажил алга.</p>
+                                <p className="text-xs text-muted-foreground">task алга.</p>
                               )}
-                              {items?.map((item) => (
-                                <div key={item.id} className="flex items-start gap-2 text-sm">
-                                  <Checkbox
-                                    checked={item.isChecked}
-                                    onCheckedChange={() => toggleSubtask(task.id, item)}
-                                    className="mt-0.5"
-                                  />
-                                  <span className={cn("min-w-0 flex-1", item.isChecked && "text-muted-foreground line-through")}>
-                                    {item.title}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    aria-label="Дэд ажил устгах"
-                                    className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                                    onClick={() => removeSubtask(task.id, item)}
+                              {items?.map((item) =>
+                                editing?.taskId === task.id && editing.itemId === item.id ? (
+                                  <form
+                                    key={item.id}
+                                    className="flex gap-2"
+                                    onSubmit={(event) => {
+                                      event.preventDefault();
+                                      renameSubtask(task.id, item, editing.text);
+                                    }}
                                   >
-                                    <Trash2 className="size-3.5" />
-                                  </button>
-                                </div>
-                              ))}
+                                    <input
+                                      autoFocus
+                                      value={editing.text}
+                                      maxLength={100}
+                                      onChange={(event) =>
+                                        setEditing({ taskId: task.id, itemId: item.id, text: event.target.value })
+                                      }
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Escape") setEditing(null);
+                                      }}
+                                      className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                                    />
+                                    <Button type="submit" size="sm" disabled={saving === task.id}>
+                                      Хадгалах
+                                    </Button>
+                                  </form>
+                                ) : (
+                                  <div key={item.id} className="flex items-start gap-2 text-sm">
+                                    <Checkbox
+                                      checked={item.isChecked}
+                                      onCheckedChange={() => toggleSubtask(task.id, item)}
+                                      className="mt-0.5"
+                                    />
+                                    <span className={cn("min-w-0 flex-1", item.isChecked && "text-muted-foreground line-through")}>
+                                      {item.title}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      aria-label="task засах"
+                                      className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                      onClick={() => setEditing({ taskId: task.id, itemId: item.id, text: item.title })}
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="task устгах"
+                                      className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                      onClick={() => removeSubtask(task.id, item)}
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </button>
+                                  </div>
+                                )
+                              )}
                               <form
                                 className="flex gap-2"
                                 onSubmit={(event) => {
@@ -632,7 +696,7 @@ export function PlannerSchedule() {
                                   onChange={(event) =>
                                     setDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))
                                   }
-                                  placeholder="Дэд ажил бичих…"
+                                  placeholder="task бичих…"
                                   maxLength={100}
                                   className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                                 />

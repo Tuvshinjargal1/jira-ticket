@@ -243,8 +243,8 @@ export async function loadChecklist(taskId: string): Promise<ChecklistItem[]> {
 export async function addChecklistItem(taskId: string, title: string): Promise<ChecklistItem[]> {
   assertPlannerTaskId(taskId);
   const text = title.trim();
-  if (!text) throw new Error("Дэд ажлын нэр хоосон байна");
-  if (text.length > 100) throw new Error("Дэд ажил 100 тэмдэгтээс богино байна");
+  if (!text) throw new Error("task-ийн нэр хоосон байна");
+  if (text.length > 100) throw new Error("task 100 тэмдэгтээс богино байна");
 
   const token = await getMsToken();
   const details = await taskDetails(token, taskId);
@@ -268,7 +268,36 @@ export async function addChecklistItem(taskId: string, title: string): Promise<C
 }
 
 function assertChecklistItemId(itemId: string) {
-  if (!/^[A-Za-z0-9_-]{1,200}$/.test(itemId)) throw new Error("Дэд ажлын id буруу");
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(itemId)) throw new Error("task-ийн id буруу");
+}
+
+export async function renameChecklistItem(
+  taskId: string,
+  itemId: string,
+  title: string
+): Promise<ChecklistItem[]> {
+  assertPlannerTaskId(taskId);
+  assertChecklistItemId(itemId);
+  const text = title.trim();
+  if (!text) throw new Error("task-ийн нэр хоосон байна");
+  if (text.length > 100) throw new Error("task 100 тэмдэгтээс богино байна");
+
+  const token = await getMsToken();
+  const details = await taskDetails(token, taskId);
+  await graphPatch(
+    token,
+    `/planner/tasks/${taskId}/details`,
+    {
+      checklist: {
+        [itemId]: {
+          "@odata.type": "#microsoft.graph.plannerChecklistItem",
+          title: text,
+        },
+      },
+    },
+    details["@odata.etag"]
+  );
+  return loadChecklist(taskId);
 }
 
 export async function setChecklistChecked(

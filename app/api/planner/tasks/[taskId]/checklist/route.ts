@@ -3,6 +3,7 @@ import {
   addChecklistItem,
   deleteChecklistItem,
   loadChecklist,
+  renameChecklistItem,
   setChecklistChecked,
 } from "@/lib/planner-board";
 import { assertApiSession } from "@/lib/session";
@@ -45,15 +46,24 @@ export async function PATCH(req: Request, context: Context) {
 
   try {
     const { taskId } = await context.params;
-    const body = (await req.json()) as { itemId?: string; isChecked?: boolean };
-    if (!body.itemId || typeof body.isChecked !== "boolean") {
-      return NextResponse.json({ error: "itemId болон isChecked шаардлагатай" }, { status: 400 });
+    const body = (await req.json()) as { itemId?: string; isChecked?: boolean; title?: string };
+    if (!body.itemId) {
+      return NextResponse.json({ error: "itemId шаардлагатай" }, { status: 400 });
     }
-    const items = await setChecklistChecked(taskId, body.itemId, body.isChecked);
+    const items =
+      typeof body.title === "string"
+        ? await renameChecklistItem(taskId, body.itemId, body.title)
+        : typeof body.isChecked === "boolean"
+          ? await setChecklistChecked(taskId, body.itemId, body.isChecked)
+          : null;
+    if (!items) {
+      return NextResponse.json({ error: "title эсвэл isChecked шаардлагатай" }, { status: 400 });
+    }
     return NextResponse.json({ items });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message.includes("хоосон") || message.includes("тэмдэгт") || message.includes("буруу") ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 

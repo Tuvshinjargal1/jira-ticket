@@ -21,6 +21,7 @@ import { adfToPlainText } from "@/lib/adf";
 import { getRequestTypeName } from "@/lib/request-type";
 import { cn } from "@/lib/utils";
 import { PlannerSchedule } from "@/components/planner-schedule";
+import { TicketSubtasks } from "@/components/ticket-subtasks";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -279,6 +280,7 @@ function TicketRow({
             </span>
           )}
           <CommentsDropdown ticket={ticket} />
+          {plannerInfo?.taskId && <TicketSubtasks taskId={plannerInfo.taskId} />}
         </div>
       </TableCell>
       <TableCell className="py-3 text-xs text-muted-foreground align-top">
