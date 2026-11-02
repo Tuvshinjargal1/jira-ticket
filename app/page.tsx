@@ -793,7 +793,7 @@ export default function Home() {
     results: { key: string; status: string; jiraStatus?: string; error?: string }[];
   } | null>(null);
   const [account, setAccount] = useState<{ email: string; name: string } | null>(null);
-  const [view, setView] = useState<"tickets" | "schedule">("tickets");
+  const [view, setView] = useState<"tickets" | "mine" | "schedule">("tickets");
   const [requestTypeFilter, setRequestTypeFilter] = useState<string>(ALL);
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -1110,15 +1110,18 @@ export default function Home() {
         </div>
       </header>
 
-      <main className={cn("mx-auto space-y-6", view === "schedule" ? "max-w-[90rem] px-3 py-4 sm:px-6 sm:py-8" : "max-w-6xl px-4 py-6 sm:px-6 sm:py-8")}>
-        <Tabs value={view} onValueChange={(value) => setView(value as "tickets" | "schedule")}>
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        <Tabs value={view} onValueChange={(value) => setView(value as "tickets" | "mine" | "schedule")}>
           <TabsList>
             <TabsTrigger value="tickets">Тикет</TabsTrigger>
+            <TabsTrigger value="mine">Миний ажил</TabsTrigger>
             <TabsTrigger value="schedule">Хуваарь</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {view === "schedule" ? (
+        {view === "mine" ? (
+          <PlannerSchedule mode="mine" account={account} />
+        ) : view === "schedule" ? (
           <PlannerSchedule />
         ) : (
         <>
