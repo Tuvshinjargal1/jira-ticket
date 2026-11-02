@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import type { BoardTask, ChecklistItem } from "@/lib/planner-board";
 import { cn } from "@/lib/utils";
 import { DueDatePicker } from "@/components/due-date-picker";
@@ -11,6 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 type Person = { name: string; tasks: BoardTask[] };
 
 type Board = { planUrl: string; people: Person[] };
+
+type Account = { email: string; name: string };
 
 function todayInUlaanbaatar(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -39,7 +41,7 @@ function formatDay(dueDate: string): string {
 
 function dueLabel(dueDate: string | null, today: string): string {
   const days = daysUntil(dueDate, today);
-  if (days === null || !dueDate) return "Огноогүй";
+  if (days === null || !dueDate) return "Огноо тавих";
   const when = formatDay(dueDate);
   if (days < 0) return `${when} · ${-days} хоног хэтэрсэн`;
   if (days === 0) return `${when} · Өнөөдөр`;
@@ -87,12 +89,19 @@ function compareTasks(a: BoardTask, b: BoardTask): number {
 
 function dueTone(dueDate: string | null, today: string): string {
   const days = daysUntil(dueDate, today);
-  if (days === null) return "bg-muted text-muted-foreground";
+  if (days === null) return "text-muted-foreground hover:bg-muted hover:text-foreground";
   if (days < 0) return "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300";
   if (days <= 2) return "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
   if (days <= 7) return "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300";
   return "bg-muted text-muted-foreground";
 }
+
+/** Багана доторх бүлгүүд — Planner-ийн статусын дарааллаар */
+const STATUS_GROUPS: { status: BoardTask["status"]; label: string; dot: string }[] = [
+  { status: "In Progress", label: "Хийгдэж байгаа", dot: "bg-blue-500" },
+  { status: "Not Started", label: "Эхлээгүй", dot: "bg-emerald-500" },
+  { status: "Completed", label: "Дууссан", dot: "bg-muted-foreground/50" },
+];
 
 const COLUMN_STORAGE_KEY = "planner-schedule-columns";
 const SCHEDULE_CACHE_MS = 3 * 60 * 1000;
@@ -139,7 +148,22 @@ function displayTitle(task: BoardTask): string {
   return task.title.startsWith(prefix) ? task.title.slice(prefix.length).trim() : task.title;
 }
 
-export function PlannerSchedule() {
+/** Bucket нэр нь имэйлийн @-ийн өмнөх хэсэг эсвэл нэрийн аль нэг үгтэй таарвал тухайн хүнийх */
+function isOwnColumn(column: string, account: Account): boolean {
+  const name = column.trim().toLowerCase();
+  if (!name) return false;
+  if (account.email.split("@")[0].toLowerCase() === name) return true;
+  return account.name.toLowerCase().split(/\s+/).includes(name);
+}
+
+export function PlannerSchedule({
+  mode = "team",
+  account = null,
+}: {
+  mode?: "team" | "mine";
+  account?: Account | null;
+}) {
+  const mineOnly = mode === "mine";
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -246,9 +270,17 @@ export function PlannerSchedule() {
     }));
   }, [board, showDone]);
 
+  const ownColumn = useMemo(() => {
+    if (!board || !account) return null;
+    return board.people.find((person) => isOwnColumn(person.name, account))?.name ?? null;
+  }, [board, account]);
+
   const shownPeople = useMemo(
-    () => visiblePeople.filter((person) => !hiddenColumns.includes(person.name)),
-    [visiblePeople, hiddenColumns]
+    () =>
+      visiblePeople.filter((person) =>
+        mineOnly ? person.name === ownColumn : !hiddenColumns.includes(person.name)
+      ),
+    [visiblePeople, hiddenColumns, mineOnly, ownColumn]
   );
 
   function hideColumn(name: string) {
@@ -439,45 +471,222 @@ export function PlannerSchedule() {
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" onClick={() => load(true)} disabled={loading}>
-          <RefreshCw className={cn(loading && "animate-spin")} />
-          Шинэчлэх
-        </Button>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Checkbox
-            checked={showDone}
-            disabled={loading || loadingDone}
-            onCheckedChange={(value) => {
-              const next = value === true;
-              if (next && !doneLoaded) {
-                loadCompleted();
-                return;
-              }
-              setShowDone(next);
-            }}
+  function renderTask(task: BoardTask) {
+    const expanded = openTask === task.id;
+    const items = checks[task.id];
+    return (
+      <div
+        key={task.id}
+        className={cn(
+          "rounded-lg bg-card ring-1 ring-foreground/10",
+          task.status === "Completed" && "opacity-60"
+        )}
+      >
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="flex w-full items-start gap-1.5 px-2.5 pt-2.5 text-left"
+          onClick={() => toggleTask(task.id)}
+        >
+          {expanded ? (
+            <ChevronDown className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="min-w-0 flex-1 text-sm leading-snug">{displayTitle(task)}</span>
+        </button>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1.5 pr-2.5 pb-2 pl-8">
+          {task.key && (
+            <a
+              href={`https://zerotech.atlassian.net/browse/${task.key}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-muted-foreground hover:text-primary hover:underline"
+            >
+              {task.key}
+            </a>
+          )}
+          <DueDatePicker
+            value={task.dueDate}
+            today={today}
+            label={dueLabel(task.dueDate, today)}
+            tone={dueTone(task.dueDate, today)}
+            disabled={savingDue === task.id}
+            onChange={(value) => saveDueDate(task.id, value, task.dueDate)}
+            className="mt-0"
           />
-          {loadingDone ? "Дууссаныг татаж байна…" : "Дууссаныг харуулах"}
-        </label>
-        {board && (
-          <a
-            href={board.planUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto inline-flex items-center gap-1 text-sm text-primary hover:underline"
-          >
-            Planner дээр нээх
-            <ExternalLink className="size-3.5" />
-          </a>
+        </div>
+        {!expanded && checkError[task.id] && (
+          <p className="pr-2.5 pb-2 pl-8 text-xs text-destructive">{checkError[task.id]}</p>
+        )}
+
+        {expanded && (
+          <div className="mx-2.5 mb-2.5 space-y-2 border-t pt-2.5">
+            {!items && !checkError[task.id] && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                task татаж байна…
+              </p>
+            )}
+            {items?.length === 0 && (
+              <p className="text-xs text-muted-foreground">task алга.</p>
+            )}
+            {items?.map((item) =>
+              editing?.taskId === task.id && editing.itemId === item.id ? (
+                <form
+                  key={item.id}
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    renameSubtask(task.id, item, editing.text);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={editing.text}
+                    maxLength={100}
+                    onChange={(event) =>
+                      setEditing({ taskId: task.id, itemId: item.id, text: event.target.value })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setEditing(null);
+                    }}
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  />
+                  <Button type="submit" size="sm" disabled={saving === task.id}>
+                    Хадгалах
+                  </Button>
+                </form>
+              ) : (
+                <div key={item.id} className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    checked={item.isChecked}
+                    onCheckedChange={() => toggleSubtask(task.id, item)}
+                    className="mt-0.5"
+                  />
+                  <span className={cn("min-w-0 flex-1", item.isChecked && "text-muted-foreground line-through")}>
+                    {item.title}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="task засах"
+                    className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => setEditing({ taskId: task.id, itemId: item.id, text: item.title })}
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="task устгах"
+                    className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                    onClick={() => removeSubtask(task.id, item)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              )
+            )}
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                addSubtask(task.id);
+              }}
+            >
+              <input
+                value={drafts[task.id] ?? ""}
+                onChange={(event) =>
+                  setDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))
+                }
+                placeholder="task бичих…"
+                maxLength={100}
+                className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+              <Button type="submit" size="sm" disabled={saving === task.id}>
+                {saving === task.id ? <Loader2 className="animate-spin" /> : <Plus />}
+                Нэмэх
+              </Button>
+            </form>
+            {checkError[task.id] && (
+              <p className="text-xs text-destructive">{checkError[task.id]}</p>
+            )}
+          </div>
         )}
       </div>
+    );
+  }
 
-      <p className="text-sm text-muted-foreground">
-        Хүссэн хүнийхээ баганыг нэмж, хасна. Хэний баганад багтахыг Planner дээр шийднэ. task-ийг
-        энд бичвэл шууд харагдана.
-      </p>
+  const someHidden = visiblePeople.some((person) => hiddenColumns.includes(person.name));
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-card px-3 py-2 ring-1 ring-foreground/10">
+        {mineOnly ? (
+          <span className="text-sm font-medium">
+            {account ? `${account.name} — таны ажлууд` : "Нэвтэрсэн хэрэглэгчийг тодорхойлж байна…"}
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-xs text-muted-foreground">Багана</span>
+            {visiblePeople.map((person) => {
+              const shown = !hiddenColumns.includes(person.name);
+              return (
+                <Button
+                  key={person.name}
+                  type="button"
+                  size="sm"
+                  variant={shown ? "secondary" : "ghost"}
+                  aria-pressed={shown}
+                  className={cn(!shown && "text-muted-foreground")}
+                  onClick={() => (shown ? hideColumn(person.name) : showColumn(person.name))}
+                >
+                  {shown ? <Check /> : <Plus />}
+                  {person.name}
+                  <span className="text-xs tabular-nums opacity-60">{person.tasks.length}</span>
+                </Button>
+              );
+            })}
+            {someHidden && (
+              <Button type="button" size="sm" variant="link" onClick={() => setHiddenColumns([])}>
+                Бүгдийг харуулах
+              </Button>
+            )}
+          </div>
+        )}
+
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={showDone}
+              disabled={loading || loadingDone}
+              onCheckedChange={(value) => {
+                const next = value === true;
+                if (next && !doneLoaded) {
+                  loadCompleted();
+                  return;
+                }
+                setShowDone(next);
+              }}
+            />
+            {loadingDone ? "Дууссаныг татаж байна…" : "Дууссаныг харуулах"}
+          </label>
+          <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
+            <RefreshCw className={cn(loading && "animate-spin")} />
+            Шинэчлэх
+          </Button>
+          {board && (
+            <a
+              href={board.planUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              Planner
+              <ExternalLink className="size-3.5" />
+            </a>
+          )}
+        </div>
+      </div>
 
       {error && (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
@@ -492,53 +701,33 @@ export function PlannerSchedule() {
 
       {board && (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Багана</span>
-            <Button
-              type="button"
-              size="sm"
-              variant={hiddenColumns.length === 0 ? "default" : "outline"}
-              onClick={() => setHiddenColumns([])}
-            >
-              Бүгд
-            </Button>
-            {visiblePeople.map((person) => {
-              const shown = !hiddenColumns.includes(person.name);
-              return (
-                <Button
-                  key={person.name}
-                  type="button"
-                  size="sm"
-                  variant={shown ? "default" : "outline"}
-                  onClick={() => (shown ? hideColumn(person.name) : showColumn(person.name))}
-                >
-                  {shown ? <X /> : <Plus />}
-                  {person.name}
-                  <span className="text-xs opacity-70">{person.tasks.length}</span>
-                </Button>
-              );
-            })}
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="Үлдсэн ажил" value={summary.open} />
-            <Stat label="Хэтэрсэн" value={summary.overdue} />
+            <Stat
+              label="Хэтэрсэн"
+              value={summary.overdue}
+              className={summary.overdue > 0 ? "text-red-600 dark:text-red-400" : undefined}
+            />
             <Stat label="7 хоногт" value={summary.week} />
             <Stat label="Огноогүй" value={summary.undated} />
           </div>
 
-          {shownPeople.length === 0 && (
+          {shownPeople.length === 0 && (!mineOnly || account) && (
             <p className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
-              Багана сонгоогүй байна. Дээрх нэр дээр дарж нэмнэ.
+              {mineOnly
+                ? `Planner дээр таны нэртэй багана олдсонгүй (${account?.email}).`
+                : "Багана сонгоогүй байна. Дээрх нэр дээр дарж нэмнэ."}
             </p>
           )}
 
           <div
             className={cn(
               "grid items-start gap-3",
-              shownPeople.length === 1
+              mineOnly
+                ? "grid-cols-1"
+                : shownPeople.length === 1
                 ? "grid-cols-1 md:grid-cols-2"
-                : "grid-cols-1 md:grid-cols-2 xl:[grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))]"
+                : "grid-cols-1 md:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(15rem,1fr))]"
             )}
           >
             {shownPeople.map((person) => {
@@ -548,168 +737,54 @@ export function PlannerSchedule() {
               return (
                 <section
                   key={person.name}
-                  className="flex min-h-64 min-w-0 max-h-[70vh] flex-col rounded-xl bg-muted/60 ring-1 ring-foreground/10 md:max-h-[calc(100vh-16rem)]"
+                  className={cn(
+                    "flex min-w-0 flex-col rounded-xl bg-muted/50 ring-1 ring-foreground/10",
+                    !mineOnly && "max-h-[70vh] md:max-h-[calc(100vh-14rem)]"
+                  )}
                 >
-                  <header className="flex items-start gap-2 border-b px-3 py-3">
+                  <header className="flex items-start gap-2 border-b px-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium">{person.name}</div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs tabular-nums text-muted-foreground">
                         {person.tasks.length} ажил
-                        {overdue > 0 ? ` · ${overdue} хэтэрсэн` : ""}
+                        {overdue > 0 && (
+                          <span className="font-medium text-red-600 dark:text-red-400"> · {overdue} хэтэрсэн</span>
+                        )}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      aria-label={`${person.name} баганыг хасах`}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
-                      onClick={() => hideColumn(person.name)}
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </header>
-                  <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-                    {person.tasks.length === 0 && (
-                      <p className="px-1 py-3 text-sm text-muted-foreground">Үлдсэн ажил алга.</p>
+                    {!mineOnly && (
+                      <button
+                        type="button"
+                        aria-label={`${person.name} баганыг хасах`}
+                        className="-mr-1 rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                        onClick={() => hideColumn(person.name)}
+                      >
+                        <X className="size-4" />
+                      </button>
                     )}
-                    {person.tasks.map((task) => {
-                      const expanded = openTask === task.id;
-                      const items = checks[task.id];
+                  </header>
+                  <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-2">
+                    {person.tasks.length === 0 && (
+                      <p className="px-1 py-2 text-sm text-muted-foreground">Үлдсэн ажил алга.</p>
+                    )}
+                    {STATUS_GROUPS.map((group) => {
+                      const tasks = person.tasks.filter((task) => task.status === group.status);
+                      if (!tasks.length) return null;
                       return (
-                        <div key={task.id} className="rounded-lg bg-card px-3 py-2.5 ring-1 ring-foreground/10">
-                          <button
-                            type="button"
-                            className="flex w-full items-start gap-2 text-left"
-                            onClick={() => toggleTask(task.id)}
-                          >
-                            {expanded ? (
-                              <ChevronDown className="mt-0.5 size-4 shrink-0" />
-                            ) : (
-                              <ChevronRight className="mt-0.5 size-4 shrink-0" />
-                            )}
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm">{displayTitle(task)}</span>
-                              <span className="mt-1 flex flex-wrap items-center gap-2">
-                                {task.key && (
-                                  <a
-                                    href={`https://zerotech.atlassian.net/browse/${task.key}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(event) => event.stopPropagation()}
-                                    className="font-mono text-xs text-primary hover:underline"
-                                  >
-                                    {task.key}
-                                  </a>
-                                )}
-                                <span className="text-xs text-muted-foreground">{task.status}</span>
-                              </span>
-                            </span>
-                          </button>
-                          <div className="pl-6">
-                            <DueDatePicker
-                              value={task.dueDate}
-                              today={today}
-                              label={dueLabel(task.dueDate, today)}
-                              tone={dueTone(task.dueDate, today)}
-                              disabled={savingDue === task.id}
-                              onChange={(value) => saveDueDate(task.id, value, task.dueDate)}
-                            />
+                        <div key={group.status} className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 px-1 text-xs font-medium text-muted-foreground">
+                            <span className={cn("size-1.5 rounded-full", group.dot)} />
+                            {group.label}
+                            <span className="tabular-nums opacity-70">{tasks.length}</span>
                           </div>
-                          {!expanded && checkError[task.id] && (
-                            <p className="mt-1 pl-6 text-xs text-destructive">{checkError[task.id]}</p>
-                          )}
-
-                          {expanded && (
-                            <div className="mt-3 space-y-2 border-t pt-3">
-                              {!items && !checkError[task.id] && (
-                                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <Loader2 className="size-3 animate-spin" />
-                                  task татаж байна…
-                                </p>
-                              )}
-                              {items?.length === 0 && (
-                                <p className="text-xs text-muted-foreground">task алга.</p>
-                              )}
-                              {items?.map((item) =>
-                                editing?.taskId === task.id && editing.itemId === item.id ? (
-                                  <form
-                                    key={item.id}
-                                    className="flex gap-2"
-                                    onSubmit={(event) => {
-                                      event.preventDefault();
-                                      renameSubtask(task.id, item, editing.text);
-                                    }}
-                                  >
-                                    <input
-                                      autoFocus
-                                      value={editing.text}
-                                      maxLength={100}
-                                      onChange={(event) =>
-                                        setEditing({ taskId: task.id, itemId: item.id, text: event.target.value })
-                                      }
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Escape") setEditing(null);
-                                      }}
-                                      className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                                    />
-                                    <Button type="submit" size="sm" disabled={saving === task.id}>
-                                      Хадгалах
-                                    </Button>
-                                  </form>
-                                ) : (
-                                  <div key={item.id} className="flex items-start gap-2 text-sm">
-                                    <Checkbox
-                                      checked={item.isChecked}
-                                      onCheckedChange={() => toggleSubtask(task.id, item)}
-                                      className="mt-0.5"
-                                    />
-                                    <span className={cn("min-w-0 flex-1", item.isChecked && "text-muted-foreground line-through")}>
-                                      {item.title}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      aria-label="task засах"
-                                      className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                      onClick={() => setEditing({ taskId: task.id, itemId: item.id, text: item.title })}
-                                    >
-                                      <Pencil className="size-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      aria-label="task устгах"
-                                      className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                                      onClick={() => removeSubtask(task.id, item)}
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                    </button>
-                                  </div>
-                                )
-                              )}
-                              <form
-                                className="flex gap-2"
-                                onSubmit={(event) => {
-                                  event.preventDefault();
-                                  addSubtask(task.id);
-                                }}
-                              >
-                                <input
-                                  value={drafts[task.id] ?? ""}
-                                  onChange={(event) =>
-                                    setDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))
-                                  }
-                                  placeholder="task бичих…"
-                                  maxLength={100}
-                                  className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                                />
-                                <Button type="submit" size="sm" disabled={saving === task.id}>
-                                  {saving === task.id ? <Loader2 className="animate-spin" /> : <Plus />}
-                                  Нэмэх
-                                </Button>
-                              </form>
-                              {checkError[task.id] && (
-                                <p className="text-xs text-destructive">{checkError[task.id]}</p>
-                              )}
-                            </div>
-                          )}
+                          <div
+                            className={cn(
+                              "flex flex-col gap-1.5",
+                              mineOnly && "md:grid md:grid-cols-2 md:items-start"
+                            )}
+                          >
+                            {tasks.map(renderTask)}
+                          </div>
                         </div>
                       );
                     })}
@@ -724,11 +799,11 @@ export function PlannerSchedule() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, className }: { label: string; value: number; className?: string }) {
   return (
-    <div className="rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+    <div className="flex items-baseline justify-between gap-2 rounded-lg bg-card px-3 py-2 ring-1 ring-foreground/10">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn("text-lg font-semibold tabular-nums", className)}>{value}</span>
     </div>
   );
 }
