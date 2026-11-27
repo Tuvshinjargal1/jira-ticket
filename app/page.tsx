@@ -8,7 +8,7 @@ import {
   Users, CheckCheck,
   ChevronDown, ChevronRight,
   Download, RefreshCw,
-  Filter, X, Loader2, LogOut,
+  Filter, X, Loader2,
 } from "lucide-react";
 import type {
   JiraTicket,
@@ -21,9 +21,10 @@ import { adfToPlainText } from "@/lib/adf";
 import { getRequestTypeName } from "@/lib/request-type";
 import { cn } from "@/lib/utils";
 import { PlannerSchedule } from "@/components/planner-schedule";
+import { TeamDashboard } from "@/components/team/team-dashboard";
 import { TicketDueDate } from "@/components/ticket-due";
 import { TicketSubtasks } from "@/components/ticket-subtasks";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppSidebar, NAV_ITEMS, type AppView } from "@/components/app-sidebar";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -793,7 +794,8 @@ export default function Home() {
     results: { key: string; status: string; jiraStatus?: string; error?: string }[];
   } | null>(null);
   const [account, setAccount] = useState<{ email: string; name: string } | null>(null);
-  const [view, setView] = useState<"tickets" | "mine" | "schedule">("tickets");
+  const [view, setView] = useState<AppView>("tickets");
+  const currentNav = NAV_ITEMS.find((item) => item.id === view);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string>(ALL);
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -1086,40 +1088,24 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen bg-muted/40 font-sans">
-      {/* Header */}
-      <header className="bg-card border-b px-6 py-4 flex items-center gap-3">
-        <div className="w-8 h-8 bg-primary text-primary-foreground rounded-lg flex items-center justify-center font-bold text-sm">
-          J→P
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold">Jira → Microsoft Planner</h1>
-          <p className="text-xs text-muted-foreground">DC project -- GP team</p>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          {account && (
-            <span className="text-xs text-muted-foreground">{account.email}</span>
-          )}
-          <form action="/api/auth/logout" method="post">
-            <Button type="submit" variant="outline" size="sm">
-              <LogOut />
-              Гарах
-            </Button>
-          </form>
-          <ThemeToggle />
-        </div>
-      </header>
+    <div className="min-h-screen bg-muted/40 font-sans lg:flex">
+      <AppSidebar
+        view={view}
+        onViewChange={setView}
+        account={account}
+        counts={{ tickets: allTickets.length }}
+      />
 
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-        <Tabs value={view} onValueChange={(value) => setView(value as "tickets" | "mine" | "schedule")}>
-          <TabsList>
-            <TabsTrigger value="tickets">Тикет</TabsTrigger>
-            <TabsTrigger value="mine">Миний ажил</TabsTrigger>
-            <TabsTrigger value="schedule">Хуваарь</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="min-w-0 flex-1">
+      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div className="hidden lg:block">
+          <h1 className="text-2xl font-semibold tracking-tight">{currentNav?.label}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{currentNav?.description}</p>
+        </div>
 
-        {view === "mine" ? (
+        {view === "team" ? (
+          <TeamDashboard />
+        ) : view === "mine" ? (
           <PlannerSchedule mode="mine" account={account} />
         ) : view === "schedule" ? (
           <PlannerSchedule />
@@ -1357,6 +1343,7 @@ export default function Home() {
 
         {view === "tickets" && <TeamsPanel />}
       </main>
+      </div>
     </div>
   );
 }

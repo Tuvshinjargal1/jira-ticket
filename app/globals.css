@@ -128,3 +128,70 @@
     @apply font-sans;
   }
 }
+/* ── GP Arena: chart tokens (validated categorical + sequential ramps) ── */
+:root {
+  --series-1: #257de0;
+  --series-2: #f47230;
+  --series-3: #00b894;
+  --series-4: #f2a600;
+  --series-5: #ee7fac;
+  --series-6: #008a17;
+  --series-7: #6a4ce2;
+  --series-8: #ec4647;
+  --seq-0: oklch(0.95 0 0);
+  --seq-1: #b6d5f8;
+  --seq-2: #84b9f3;
+  --seq-3: #519ced;
+  --seq-4: #2370cd;
+  --seq-5: #0f4a96;
+}
+
+.dark {
+  --series-1: #338ced;
+  --series-2: #e76624;
+  --series-3: #00a888;
+  --series-4: #d28e05;
+  --series-5: #e24d8b;
+  --series-6: #0aac23;
+  --series-7: #9887ef;
+  --series-8: #eb6263;
+  --seq-0: oklch(0.27 0 0);
+  --seq-1: #0f4a96;
+  --seq-2: #1757ac;
+  --seq-3: #2370cd;
+  --seq-4: #338ced;
+  --seq-5: #84b9f3;
+}
+
+@keyframes arena-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes arena-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.1); }
+}
+@keyframes arena-twinkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.75); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@keyframes arena-confetti {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+}
+@keyframes arena-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.arena-bob { animation: arena-bob 3.4s ease-in-out infinite; }
+.arena-blink { transform-box: fill-box; transform-origin: center; animation: arena-blink 5s infinite; }
+.arena-twinkle { transform-box: fill-box; transform-origin: center; animation: arena-twinkle 2.4s ease-in-out infinite; }
+.arena-delay { animation-delay: 1.2s; }
+.arena-pop { animation: arena-pop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+.arena-confetti { animation: arena-confetti 1.1s cubic-bezier(0.15, 0.7, 0.4, 1) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-bob, .arena-blink, .arena-twinkle, .arena-pop, .arena-confetti { animation: none; }
+}
