@@ -5,18 +5,18 @@ export type TeamMember = {
   name: string;
   stats: MemberStats;
   profile: Profile;
-  xp: number;
-  level: { level: number; into: number; need: number };
-  tier: string;
   achievements: string[];
   giftsReceived: number;
   giftCounts: Partial<Record<GiftBadgeId, number>>;
+  moodToday: number | null;
+  /** Сүүлийн 14 хоног (хуучнаас шинэ рүү) */
+  moodHistory: (number | null)[];
 };
 
 export type TeamPayload = {
   generatedAt: string;
   today: string;
-  me: { memberId: string | null; name: string; giftsLeft: number; quota: number };
+  me: { key: string; memberId: string | null; name: string };
   members: TeamMember[];
   gifts: Gift[];
 };

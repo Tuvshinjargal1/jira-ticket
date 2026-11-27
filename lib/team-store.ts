@@ -10,6 +10,8 @@ import type { Gift, Profile } from "@/lib/team-catalog";
 type HubData = {
   profiles: Record<string, Profile>;
   gifts: Gift[];
+  /** memberId → YYYY-MM-DD → 1..5 */
+  moods: Record<string, Record<string, number>>;
 };
 
 const FILE = process.env.TEAM_HUB_FILE ?? path.join(process.cwd(), "data", "team-hub.json");
@@ -20,9 +22,9 @@ async function load(): Promise<HubData> {
   try {
     const raw = await readFile(FILE, "utf8");
     const data = JSON.parse(raw) as Partial<HubData>;
-    return { profiles: data.profiles ?? {}, gifts: data.gifts ?? [] };
+    return { profiles: data.profiles ?? {}, gifts: data.gifts ?? [], moods: data.moods ?? {} };
   } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { profiles: {}, gifts: [] };
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { profiles: {}, gifts: [], moods: {} };
     throw error;
   }
 }

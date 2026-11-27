@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Gift, Loader2, Send } from "lucide-react";
+import { Ban, Check, Gift, Loader2, Lock, Send, ShoppingBag } from "lucide-react";
 import {
+  ACHIEVEMENTS,
   GIFT_BADGES,
   GIFT_BADGE_IDS,
   GIFT_MESSAGE_MAX,
@@ -10,8 +11,12 @@ import {
   PALETTE_IDS,
   SPECIES,
   SPECIES_LABEL,
+  OUTFIT_ITEMS,
+  OUTFIT_SLOT_LABEL,
   TITLE_MAX,
   type GiftBadgeId,
+  type Outfit,
+  type OutfitSlot,
   type PaletteId,
   type Species,
 } from "@/lib/team-catalog";
@@ -94,7 +99,6 @@ function GiftBody({ onOpenChange, members, initialTo, me, onDone }: GiftProps) {
 
   const target = members.find((m) => m.id === to);
   const meta = GIFT_BADGES[badge];
-  const noQuota = me.giftsLeft <= 0;
 
   async function submit() {
     if (!to) return;
@@ -128,11 +132,7 @@ function GiftBody({ onOpenChange, members, initialTo, me, onDone }: GiftProps) {
                 <Gift className="size-5 text-rose-500" /> Badge бэлэглэх
               </DialogTitle>
               <DialogDescription>
-                Энэ долоо хоногт{" "}
-                <span className="font-semibold text-foreground tabular-nums">
-                  {me.giftsLeft}/{me.quota}
-                </span>{" "}
-                бэлэглэх эрх үлдсэн. Хүлээн авагч +15 XP авна.
+                Хамт олондоо талархлаа илэрхийлээрэй — хэдэн ч удаа бэлэглэж болно.
               </DialogDescription>
             </div>
 
@@ -205,9 +205,9 @@ function GiftBody({ onOpenChange, members, initialTo, me, onDone }: GiftProps) {
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Болих
               </Button>
-              <Button onClick={submit} disabled={busy || !to || noQuota}>
+              <Button onClick={submit} disabled={busy || !to}>
                 {busy ? <Loader2 className="animate-spin" /> : <Send />}
-                {noQuota ? "Эрх дууссан" : "Бэлэглэх"}
+                Бэлэглэх
               </Button>
             </div>
           </>
@@ -248,6 +248,8 @@ function CharacterBody({
   const [species, setSpecies] = useState<Species>(member.profile.species);
   const [palette, setPalette] = useState<PaletteId>(member.profile.palette);
   const [title, setTitle] = useState(member.profile.title);
+  const [outfit, setOutfit] = useState<Outfit>(member.profile.outfit ?? {});
+  const [pane, setPane] = useState<"look" | "shop">("look");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -255,7 +257,7 @@ function CharacterBody({
     setBusy(true);
     setError("");
     try {
-      onDone(await send("PUT", { species, palette, title }));
+      onDone(await send("PUT", { species, palette, title, outfit }));
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -269,7 +271,7 @@ function CharacterBody({
         <div className="space-y-1 pr-6">
           <DialogTitle>Миний character</DialogTitle>
           <DialogDescription>
-            Дүрээ сонгоорой. Level ахих тусам од, гялбаа, титэм нэмэгдэнэ.
+            Дүр, өнгөө сонгоод дэлгүүрээс хувцаслаарай. Онцгой хувцсууд achievement-аар нээгдэнэ.
           </DialogDescription>
         </div>
 
@@ -278,7 +280,7 @@ function CharacterBody({
             className="flex flex-col items-center justify-center gap-2 rounded-2xl p-4"
             style={{ background: `color-mix(in oklab, ${PALETTES[palette].body} 16%, transparent)` }}
           >
-            <Character profile={{ species, palette }} level={member.level.level} mood="happy" size={150} />
+            <Character profile={{ species, palette, outfit }} mood="happy" size={150} />
             <div className="text-center">
               <div className="font-semibold">{member.name}</div>
               <div className="min-h-4 text-xs text-muted-foreground italic">{title || "Цолгүй"}</div>
@@ -286,6 +288,41 @@ function CharacterBody({
           </div>
 
           <div className="space-y-4">
+            <div className="flex rounded-lg bg-muted p-0.5" role="tablist">
+              {(
+                [
+                  ["look", "Дүр ба өнгө"],
+                  ["shop", "Хувцасны дэлгүүр"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={pane === id}
+                  onClick={() => setPane(id)}
+                  className={cn(
+                    "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                    pane === id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {id === "shop" && <ShoppingBag className="mr-1 inline size-3.5 align-[-2px]" />}
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {pane === "shop" ? (
+              <Wardrobe
+                species={species}
+                palette={palette}
+                outfit={outfit}
+                previous={member.profile.outfit ?? {}}
+                unlocked={new Set(member.achievements)}
+                onChange={setOutfit}
+              />
+            ) : (
+            <>
             <fieldset>
               <legend className="mb-2 text-xs font-medium text-muted-foreground">Дүр</legend>
               <div className="grid grid-cols-3 gap-2">
@@ -300,7 +337,7 @@ function CharacterBody({
                       species === s ? "border-foreground/60 bg-muted" : "border-transparent hover:bg-muted/60"
                     )}
                   >
-                    <Character profile={{ species: s, palette }} size={48} animated={false} />
+                    <Character profile={{ species: s, palette, outfit }} size={48} animated={false} />
                     {SPECIES_LABEL[s]}
                   </button>
                 ))}
@@ -339,6 +376,8 @@ function CharacterBody({
                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
               />
             </label>
+            </>
+            )}
           </div>
         </div>
 
@@ -354,5 +393,82 @@ function CharacterBody({
           </Button>
         </div>
     </>
+  );
+}
+
+// ── Хувцасны дэлгүүр ────────────────────────────────────────────────────────
+
+function Wardrobe({
+  species,
+  palette,
+  outfit,
+  previous,
+  unlocked,
+  onChange,
+}: {
+  species: Species;
+  palette: PaletteId;
+  outfit: Outfit;
+  previous: Outfit;
+  unlocked: Set<string>;
+  onChange: (outfit: Outfit) => void;
+}) {
+  const achievementName = new Map(ACHIEVEMENTS.map((a) => [a.id, a.name]));
+  return (
+    <div className="space-y-4">
+      {(Object.keys(OUTFIT_ITEMS) as OutfitSlot[]).map((slot) => (
+        <fieldset key={slot}>
+          <legend className="mb-2 text-xs font-medium text-muted-foreground">{OUTFIT_SLOT_LABEL[slot]}</legend>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => onChange({ ...outfit, [slot]: null })}
+              aria-pressed={!outfit[slot]}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 rounded-xl border p-2 text-[11px] text-muted-foreground transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                !outfit[slot] ? "border-foreground/60 bg-muted text-foreground" : "border-dashed hover:bg-muted/60"
+              )}
+            >
+              <Ban className="size-5" />
+              Юу ч үгүй
+            </button>
+            {OUTFIT_ITEMS[slot].map((item) => {
+              const locked = !!item.unlock && !unlocked.has(item.unlock) && previous[slot] !== item.id;
+              const active = outfit[slot] === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={locked}
+                  onClick={() => onChange({ ...outfit, [slot]: item.id })}
+                  aria-pressed={active}
+                  title={locked ? `Нээх: "${achievementName.get(item.unlock!)}" achievement` : item.name}
+                  className={cn(
+                    "relative flex flex-col items-center gap-0.5 rounded-xl border p-1.5 text-[11px] transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    active ? "border-foreground/60 bg-muted shadow-sm" : "border-transparent hover:bg-muted/60",
+                    locked && "cursor-not-allowed opacity-60 hover:bg-transparent"
+                  )}
+                >
+                  <Character
+                    profile={{ species, palette, outfit: { [slot]: item.id } }}
+                    size={52}
+                    animated={false}
+                    className={cn(locked && "grayscale")}
+                  />
+                  <span className="leading-tight font-medium">{item.name}</span>
+                  {locked ? (
+                    <span className="flex items-center gap-0.5 text-[10px] leading-tight text-muted-foreground">
+                      <Lock className="size-2.5" /> {achievementName.get(item.unlock!)}
+                    </span>
+                  ) : item.unlock ? (
+                    <span className="text-[10px] leading-tight text-amber-600 dark:text-amber-400">Онцгой</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      ))}
+    </div>
   );
 }

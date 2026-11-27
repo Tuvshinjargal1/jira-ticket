@@ -12,14 +12,16 @@ import {
   TrendingDown,
   TrendingUp,
   TriangleAlert,
-  Trophy,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
   GIFT_BADGES,
   GIFT_BADGE_IDS,
   PALETTES,
-  XP_RULES,
+  MOODS,
+  REACTIONS,
+  moodMeta,
+  teamWeather,
   addDays,
   ubDay,
   weekStart,
@@ -39,6 +41,7 @@ import { seriesColor, type TeamMember, type TeamPayload } from "@/components/tea
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function moodOf(m: TeamMember): Mood {
+  if (m.moodToday !== null) return m.moodToday >= 4 ? "happy" : m.moodToday <= 2 ? "tired" : "normal";
   if (m.stats.overdue >= 3) return "tired";
   if (m.stats.completed7 > 0 || m.stats.streak >= 2) return "happy";
   return "normal";
@@ -101,34 +104,6 @@ function Kpi({
   );
 }
 
-function XpBar({ member }: { member: TeamMember }) {
-  const pal = PALETTES[member.profile.palette];
-  const { into, need } = member.level;
-  return (
-    <div>
-      <div
-        className="h-2 overflow-hidden rounded-full bg-muted"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={need}
-        aria-valuenow={into}
-        aria-label="Дараагийн level хүртэл"
-      >
-        <div
-          className="h-full rounded-full transition-[width] duration-700"
-          style={{ width: `${Math.max(4, (into / need) * 100)}%`, background: `linear-gradient(90deg, ${pal.body}, ${pal.shade})` }}
-        />
-      </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground tabular-nums">
-        <span>{member.xp} XP</span>
-        <span>
-          Lv {member.level.level + 1} хүртэл {need - into}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function MemberCard({
   member,
   isMe,
@@ -161,9 +136,15 @@ function MemberCard({
         className="relative flex h-36 items-end justify-center outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
         style={{ background: `radial-gradient(120% 90% at 50% 100%, ${tint(member, 30)}, ${tint(member, 6)} 70%)` }}
       >
-        <span className="absolute top-3 left-3 rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-semibold backdrop-blur tabular-nums">
-          Lv {member.level.level}
-        </span>
+        {moodMeta(member.moodToday) && (
+          <span
+            className="absolute top-3 left-3 flex items-center gap-1 rounded-full bg-background/80 py-0.5 pr-2 pl-1 text-[11px] font-medium backdrop-blur"
+            title="Өнөөдрийн mood"
+          >
+            <span className="text-sm leading-none">{moodMeta(member.moodToday)!.emoji}</span>
+            {moodMeta(member.moodToday)!.label}
+          </span>
+        )}
         <span className="absolute top-3 right-3 flex gap-1">
           {isMe && (
             <span className="rounded-full bg-foreground px-2 py-0.5 text-[11px] font-semibold text-background">Та</span>
@@ -179,7 +160,6 @@ function MemberCard({
         </span>
         <Character
           profile={member.profile}
-          level={member.level.level}
           mood={moodOf(member)}
           size={118}
           label={`${member.name}-ийн character`}
@@ -191,11 +171,13 @@ function MemberCard({
         <div>
           <h3 className="truncate text-base font-semibold">{member.name}</h3>
           <p className="truncate text-xs text-muted-foreground">
-            {member.tier}
-            {member.profile.title && <> · <span className="italic">{member.profile.title}</span></>}
+            {member.profile.title ? (
+              <span className="italic">{member.profile.title}</span>
+            ) : (
+              `${member.achievements.length} achievement`
+            )}
           </p>
         </div>
-        <XpBar member={member} />
 
         <dl className="grid grid-cols-3 divide-x rounded-xl bg-muted/50 py-2 text-center">
           <div>
@@ -281,16 +263,15 @@ function MemberDetail({
           style={{ background: `linear-gradient(180deg, ${tint(member, 14)}, transparent 60%)` }}
         >
           <div className="flex flex-col items-center text-center">
-            <Character profile={member.profile} level={member.level.level} mood={moodOf(member)} size={150} />
+            <Character profile={member.profile} mood={moodOf(member)} size={150} />
             <h2 id="member-detail-title" className="mt-2 text-xl font-semibold">
               {member.name}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Lv {member.level.level} · {member.tier}
+              {member.achievements.length} achievement · {member.giftsReceived} badge
             </p>
             {member.profile.title && <p className="mt-0.5 text-xs italic text-muted-foreground">&ldquo;{member.profile.title}&rdquo;</p>}
           </div>
-          <XpBar member={member} />
           <div className="divide-y">
             <StatLine label="Нийт дууссан" value={s.completedTotal} />
             <StatLine label="Сүүлийн 30 хоногт" value={s.completed30} />
@@ -401,86 +382,110 @@ function MemberDetail({
   );
 }
 
-type Metric = "xp" | "week" | "streak" | "ontime";
-
-const METRICS: { id: Metric; label: string; value: (m: TeamMember) => number | null; format: (m: TeamMember) => string }[] = [
-  { id: "xp", label: "XP", value: (m) => m.xp, format: (m) => `${m.xp} XP` },
-  { id: "week", label: "7 хоног", value: (m) => m.stats.completed7, format: (m) => `${m.stats.completed7} task` },
-  { id: "streak", label: "Streak", value: (m) => m.stats.streak, format: (m) => `${m.stats.streak} өдөр` },
-  { id: "ontime", label: "Хугацаандаа", value: (m) => m.stats.onTimeRate, format: (m) => pct(m.stats.onTimeRate) },
-];
-
-const RANK_STYLE = [
-  "bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950",
-  "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900",
-  "bg-gradient-to-br from-orange-300 to-orange-600 text-orange-950",
-];
-
-function Leaderboard({ members, meId }: { members: TeamMember[]; meId: string | null }) {
-  const [metric, setMetric] = useState<Metric>("xp");
-  const def = METRICS.find((x) => x.id === metric)!;
-  const indexOf = new Map(members.map((m, i) => [m.id, i]));
-  const rows = [...members].sort((a, b) => (def.value(b) ?? -1) - (def.value(a) ?? -1));
-  const max = Math.max(...rows.map((m) => def.value(m) ?? 0), metric === "ontime" ? 1 : 1);
+function MoodBoard({ data, onCheckIn }: { data: TeamPayload; onCheckIn: (mood: number) => void }) {
+  const [pending, setPending] = useState<number | null>(null);
+  const me = data.members.find((m) => m.id === data.me.memberId) ?? null;
+  const checked = data.members.filter((m) => m.moodToday !== null);
+  const weather = teamWeather(checked.map((m) => m.moodToday!));
+  const current = pending ?? me?.moodToday ?? null;
+  const days = data.members[0]?.moodHistory.length ?? 14;
 
   return (
-    <section className="rounded-3xl border bg-card p-5" aria-labelledby="lb-title">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 id="lb-title" className="flex items-center gap-2 font-semibold">
-          <Trophy className="size-4 text-amber-500" /> Тэргүүлэгчид
-        </h2>
-        <div className="flex rounded-lg bg-muted p-0.5" role="tablist">
-          {METRICS.map((x) => (
-            <button
-              key={x.id}
-              type="button"
-              role="tab"
-              aria-selected={metric === x.id}
-              onClick={() => setMetric(x.id)}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                metric === x.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {x.label}
-            </button>
-          ))}
+    <section className="flex flex-col rounded-3xl border bg-card p-5" aria-labelledby="mood-title">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 id="mood-title" className="font-semibold">
+            Багийн цаг агаар
+          </h2>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            Өнөөдөр {checked.length}/{data.members.length} хүн check-in хийсэн
+          </p>
+        </div>
+        <div className="flex items-center gap-2 rounded-2xl bg-muted/60 px-3 py-1.5" aria-live="polite">
+          <span className="text-3xl leading-none">{weather?.icon ?? "🌫️"}</span>
+          <div className="text-right">
+            <div className="text-sm font-semibold">{weather?.label ?? "Мэдээлэлгүй"}</div>
+            {weather && (
+              <div className="text-[11px] text-muted-foreground tabular-nums">дундаж {weather.avg.toFixed(1)}/5</div>
+            )}
+          </div>
         </div>
       </div>
-      <ol className="space-y-2.5">
-        {rows.map((m, rank) => {
-          const v = def.value(m);
+
+      {me && (
+        <div className="mb-4 rounded-2xl border border-dashed p-3">
+          <p className="mb-2 text-sm font-medium">
+            {me.moodToday === null ? "Өнөөдөр ямар байна?" : "Өнөөдрийн mood-оо өөрчлөх үү?"}
+          </p>
+          <div className="grid grid-cols-5 gap-1.5">
+            {MOODS.map((m) => {
+              const active = current === m.value;
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    setPending(m.value);
+                    onCheckIn(m.value);
+                  }}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-xl border py-2 transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    active ? "scale-105 border-foreground/50 bg-muted shadow-sm" : "border-transparent hover:bg-muted/60"
+                  )}
+                >
+                  <span className={cn("text-2xl leading-none", active && "arena-pop")}>{m.emoji}</span>
+                  <span className="text-[10px] text-muted-foreground">{m.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <ul className="space-y-2.5">
+        {data.members.map((m) => {
+          const today = moodMeta(m.moodToday);
           return (
-            <li key={m.id} className={cn("flex items-center gap-3 rounded-xl p-2", m.id === meId && "bg-muted/60")}>
-              <span
-                className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums",
-                  v ? RANK_STYLE[rank] ?? "bg-muted text-muted-foreground" : "bg-muted text-muted-foreground"
-                )}
-              >
-                {rank + 1}
-              </span>
-              <MiniAvatar member={m} size={32} />
+            <li key={m.id} className="flex items-center gap-3">
+              <MiniAvatar member={m} size={30} />
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
+                <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{m.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{def.format(m)}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {today ? (
+                      <>
+                        <span className="mr-1 text-sm">{today.emoji}</span>
+                        {today.label}
+                      </>
+                    ) : (
+                      "хараахан"
+                    )}
+                  </span>
                 </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full transition-[width] duration-500"
-                    style={{ width: `${((v ?? 0) / max) * 100}%`, background: seriesColor(indexOf.get(m.id) ?? 0) }}
-                  />
+                <div className="mt-1 flex gap-[3px]" aria-label={`Сүүлийн ${days} хоногийн mood`}>
+                  {m.moodHistory.map((v, i) => {
+                    const meta = moodMeta(v);
+                    const ago = days - 1 - i;
+                    return (
+                      <span
+                        key={i}
+                        title={meta ? `${ago === 0 ? "Өнөөдөр" : `${ago} өдрийн өмнө`}: ${meta.label}` : undefined}
+                        className={cn(
+                          "flex h-4 flex-1 items-center justify-center rounded-[4px] text-[9px] leading-none",
+                          meta ? "bg-muted" : "bg-muted/40"
+                        )}
+                      >
+                        {meta?.emoji}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             </li>
           );
         })}
-      </ol>
-      <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
-        XP = дууссан task × {XP_RULES.perCompleted} + хугацаандаа × {XP_RULES.perOnTime} + хүлээн авсан badge ×{" "}
-        {XP_RULES.perGift} + streak өдөр × {XP_RULES.perStreakDay}
-      </p>
+      </ul>
     </section>
   );
 }
@@ -490,11 +495,15 @@ function KudosFeed({
   members,
   onGift,
   canGift,
+  meKey,
+  onReact,
 }: {
   gifts: GiftT[];
   members: TeamMember[];
   onGift: () => void;
   canGift: boolean;
+  meKey: string;
+  onReact: (giftId: string, emoji: string) => void;
 }) {
   const byId = new Map(members.map((m) => [m.id, m]));
   return (
@@ -513,7 +522,7 @@ function KudosFeed({
             const to = byId.get(g.to);
             const from = byId.get(g.from);
             return (
-              <li key={g.id} className="flex gap-3 rounded-xl p-2 transition-colors hover:bg-muted/50">
+              <li key={g.id} className="group/kudo flex gap-3 rounded-xl p-2 transition-colors hover:bg-muted/50">
                 <GiftMedal badge={g.badge} size={38} />
                 <div className="min-w-0 flex-1 text-sm">
                   <p className="leading-snug">
@@ -525,7 +534,34 @@ function KudosFeed({
                   {g.message && (
                     <p className="mt-1 rounded-lg rounded-tl-sm bg-muted/70 px-2.5 py-1.5 text-xs">{g.message}</p>
                   )}
-                  <p className="mt-1 text-[11px] text-muted-foreground">{relTime(g.at)}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    {REACTIONS.map((emoji) => {
+                      const who = g.reactions?.[emoji] ?? [];
+                      const mine = who.includes(meKey);
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => onReact(g.id, emoji)}
+                          aria-pressed={mine}
+                          aria-label={`${emoji} reaction`}
+                          title={who.map((k) => byId.get(k)?.name ?? k).join(", ") || undefined}
+                          className={cn(
+                            "flex h-6 items-center gap-1 rounded-full border px-1.5 text-xs transition-all outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/60",
+                            mine
+                              ? "border-sky-400/60 bg-sky-500/10"
+                              : who.length
+                                ? "bg-background hover:bg-muted"
+                                : "border-transparent opacity-40 group-hover/kudo:opacity-70 hover:bg-muted hover:opacity-100"
+                          )}
+                        >
+                          <span className="leading-none">{emoji}</span>
+                          {who.length > 0 && <span className="text-[11px] tabular-nums">{who.length}</span>}
+                        </button>
+                      );
+                    })}
+                    <span className="ml-1 text-[11px] text-muted-foreground">{relTime(g.at)}</span>
+                  </div>
                 </div>
                 {to && <MiniAvatar member={to} size={30} />}
               </li>
@@ -620,6 +656,20 @@ export function TeamDashboard() {
     };
   }, [members, data]);
 
+  const act = (body: Record<string, unknown>) => {
+    apply(
+      fetch("/api/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(async (res) => {
+        const json = (await res.json()) as TeamPayload & { error?: string };
+        if (!res.ok) throw new Error(json.error || "Алдаа гарлаа");
+        return json;
+      })
+    );
+  };
+
   const openGift = (to: string | null) => {
     setGiftTo(to);
     setGiftOpen(true);
@@ -643,7 +693,7 @@ export function TeamDashboard() {
   }
 
   const delta = team.done7 - team.prev7;
-  const canGift = !!me && me.giftsLeft > 0 && members.some((m) => m.id !== me.memberId);
+  const canGift = !!me && members.some((m) => m.id !== me.memberId);
 
   return (
     <div className="space-y-6">
@@ -670,15 +720,9 @@ export function TeamDashboard() {
                 <p className="mt-1 text-sm text-muted-foreground">Багийн хэмнэл, амжилт, талархал нэг дор.</p>
               </div>
               <div className="flex items-center gap-2">
-                {me && (
-                  <span
-                    className="flex items-center gap-1.5 rounded-full border bg-background/80 px-3 py-1.5 text-xs font-medium tabular-nums"
-                    title="Энэ долоо хоногт бэлэглэх badge-ийн эрх"
-                  >
-                    <Gift className="size-3.5 text-rose-500" />
-                    {me.giftsLeft}/{me.quota}
-                  </span>
-                )}
+                <Button variant="outline" size="sm" onClick={() => openGift(null)} disabled={!canGift}>
+                  <Gift className="text-rose-500" /> Badge бэлэглэх
+                </Button>
                 <Button variant="outline" size="icon" onClick={() => load(true)} disabled={loading} aria-label="Шинэчлэх">
                   <RefreshCw className={cn(loading && "animate-spin")} />
                 </Button>
@@ -756,8 +800,15 @@ export function TeamDashboard() {
       {selected && <MemberDetail member={selected} index={selectedIndex} data={data} />}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Leaderboard members={members} meId={me?.memberId ?? null} />
-        <KudosFeed gifts={data.gifts} members={members} onGift={() => openGift(null)} canGift={canGift} />
+        <MoodBoard data={data} onCheckIn={(mood) => act({ action: "mood", mood })} />
+        <KudosFeed
+          gifts={data.gifts}
+          members={members}
+          onGift={() => openGift(null)}
+          canGift={canGift}
+          meKey={data.me.key}
+          onReact={(giftId, emoji) => act({ action: "react", giftId, emoji })}
+        />
       </div>
 
       {me && (

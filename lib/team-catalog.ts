@@ -1,6 +1,6 @@
 /**
  * GP Arena — client болон server аль алинд нь ашиглагдах тогтмол каталог.
- * Character, өнгө, бэлэглэх badge, автомат achievement, level-ийн тооцоо.
+ * Character, хувцас, бэлэглэх badge, achievement, mood check-in.
  */
 
 export const SPECIES = ["fox", "bear", "cat", "owl", "bunny", "robot"] as const;
@@ -28,11 +28,41 @@ export const PALETTES = {
 export type PaletteId = keyof typeof PALETTES;
 export const PALETTE_IDS = Object.keys(PALETTES) as PaletteId[];
 
+export type OutfitSlot = "head" | "face" | "neck";
+export type Outfit = Partial<Record<OutfitSlot, string | null>>;
+
 export type Profile = {
   species: Species;
   palette: PaletteId;
   /** Өөрөө сонгосон цол, жишээ нь "Bug анчин" */
   title: string;
+  outfit?: Outfit;
+};
+
+/** Хувцасны дэлгүүр — `unlock` нь achievement id (байхгүй бол үнэгүй) */
+export const OUTFIT_ITEMS: Record<OutfitSlot, { id: string; name: string; unlock?: string }[]> = {
+  head: [
+    { id: "party", name: "Баярын малгай" },
+    { id: "beanie", name: "Ноосон малгай" },
+    { id: "flower", name: "Цэцэг" },
+    { id: "headphones", name: "Чихэвч", unlock: "ten" },
+    { id: "crown", name: "Титэм", unlock: "star" },
+  ],
+  face: [
+    { id: "round", name: "Нүдний шил" },
+    { id: "sunglasses", name: "Нарны шил", unlock: "streak3" },
+  ],
+  neck: [
+    { id: "scarf", name: "Ороолт" },
+    { id: "bow", name: "Эрвээхэй зангиа" },
+    { id: "medal", name: "Алтан медаль", unlock: "loved" },
+  ],
+};
+
+export const OUTFIT_SLOT_LABEL: Record<OutfitSlot, string> = {
+  head: "Толгой",
+  face: "Нүүр",
+  neck: "Хүзүү",
 };
 
 const DEFAULT_ORDER: { species: Species; palette: PaletteId }[] = [
@@ -47,7 +77,7 @@ const DEFAULT_ORDER: { species: Species; palette: PaletteId }[] = [
 /** Profile тохируулаагүй гишүүнд жагсаалтын байрлалаар нь ялгаатай default өгнө */
 export function defaultProfile(index: number): Profile {
   const pick = DEFAULT_ORDER[index % DEFAULT_ORDER.length];
-  return { ...pick, title: "" };
+  return { ...pick, title: "", outfit: {} };
 }
 
 // ── Бэлэглэх badge (kudos) ──────────────────────────────────────────────────
@@ -105,8 +135,6 @@ export const GIFT_BADGES = {
 export type GiftBadgeId = keyof typeof GIFT_BADGES;
 export const GIFT_BADGE_IDS = Object.keys(GIFT_BADGES) as GiftBadgeId[];
 
-/** Нэг хүн долоо хоногт хэдэн badge бэлэглэж болох */
-export const WEEKLY_GIFT_QUOTA = 3;
 export const GIFT_MESSAGE_MAX = 140;
 export const TITLE_MAX = 28;
 
@@ -118,7 +146,36 @@ export type Gift = {
   badge: GiftBadgeId;
   message: string;
   at: string; // ISO
+  /** emoji → reaction дарсан хүмүүсийн key */
+  reactions?: Record<string, string[]>;
 };
+
+export const REACTIONS = ["👏", "❤️", "🔥", "🙌", "😂"] as const;
+
+// ── Mood check-in ───────────────────────────────────────────────────────────
+
+export const MOODS = [
+  { value: 5, emoji: "🤩", label: "Гайхалтай" },
+  { value: 4, emoji: "😊", label: "Сайн" },
+  { value: 3, emoji: "😐", label: "Ердийн" },
+  { value: 2, emoji: "😴", label: "Ядарсан" },
+  { value: 1, emoji: "😫", label: "Хэцүү" },
+] as const;
+
+export function moodMeta(value: number | null | undefined) {
+  return MOODS.find((m) => m.value === value) ?? null;
+}
+
+/** Багийн дундаж mood → "цаг агаар" */
+export function teamWeather(values: number[]): { icon: string; label: string; avg: number } | null {
+  if (!values.length) return null;
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  if (avg >= 4.3) return { icon: "☀️", label: "Нартай", avg };
+  if (avg >= 3.5) return { icon: "🌤️", label: "Цэлмэг", avg };
+  if (avg >= 2.7) return { icon: "⛅", label: "Үүлшинэ", avg };
+  if (avg >= 2) return { icon: "🌧️", label: "Бороотой", avg };
+  return { icon: "⛈️", label: "Шуургатай", avg };
+}
 
 // ── Автомат achievement ─────────────────────────────────────────────────────
 
@@ -175,49 +232,6 @@ export const ACHIEVEMENTS: {
   { id: "star", name: "7 хоногийн од", hint: "Энэ 7 хоногт багтаа тэргүүлэх", test: (_s, c) => c.topWeek },
   { id: "loved", name: "Багийн хайртай", hint: "5 badge хүлээн ав", test: (_s, c) => c.giftsReceived >= 5 },
 ];
-
-// ── XP & Level ──────────────────────────────────────────────────────────────
-
-export const XP_RULES = {
-  perCompleted: 10,
-  perOnTime: 5,
-  perGift: 15,
-  perStreakDay: 4,
-};
-
-export function computeXp(s: MemberStats, giftsReceived: number): number {
-  return (
-    s.completedTotal * XP_RULES.perCompleted +
-    s.onTimeCount * XP_RULES.perOnTime +
-    giftsReceived * XP_RULES.perGift +
-    s.streak * XP_RULES.perStreakDay
-  );
-}
-
-/** Level n-ээс n+1 рүү 60·n XP хэрэгтэй (аажмаар хүндэрнэ) */
-export function levelFromXp(xp: number): { level: number; into: number; need: number } {
-  let level = 1;
-  let rest = xp;
-  while (rest >= 60 * level) {
-    rest -= 60 * level;
-    level++;
-  }
-  return { level, into: rest, need: 60 * level };
-}
-
-export const LEVEL_TIERS = [
-  { min: 1, name: "Шинэ од" },
-  { min: 3, name: "Туршлагатай" },
-  { min: 5, name: "Мэргэжилтэн" },
-  { min: 8, name: "Мастер" },
-  { min: 12, name: "Домог" },
-];
-
-export function tierName(level: number): string {
-  let name = LEVEL_TIERS[0].name;
-  for (const t of LEVEL_TIERS) if (level >= t.min) name = t.name;
-  return name;
-}
 
 /** Ulaanbaatar цагийн бүсээр ISO долоо хоногийн эхлэл (Даваа) — YYYY-MM-DD */
 export function ubDay(date: Date = new Date()): string {

@@ -10,9 +10,8 @@ const INK = "#2B2140";
 const GOLD = "#FFC83D";
 
 type Props = {
-  profile: Pick<Profile, "species" | "palette">;
+  profile: Pick<Profile, "species" | "palette" | "outfit">;
   mood?: Mood;
-  level?: number;
   size?: number;
   animated?: boolean;
   className?: string;
@@ -50,12 +49,120 @@ function Eyes({ mood, color, robot }: { mood: Mood; color: string; robot: boolea
   );
 }
 
-const BLOB = "M60 34 C86 34 98 52 98 74 C98 96 82 106 60 106 C38 106 22 96 22 74 C22 52 34 34 60 34 Z";
+// ── Хувцас ──────────────────────────────────────────────────────────────────
+
+function HeadItem({ id, robot, animated }: { id: string; robot: boolean; animated: boolean }) {
+  const dy = robot ? 3 : 0;
+  switch (id) {
+    case "crown":
+      return (
+        <path
+          d="M46 38 L44 24 L53 31 L60 20 L67 31 L76 24 L74 38 Z"
+          transform={`translate(0 ${dy})`}
+          fill={GOLD}
+          stroke="#E09A00"
+          strokeWidth={1.2}
+          strokeLinejoin="round"
+        />
+      );
+    case "party":
+      return (
+        <g transform={`rotate(-10 60 34) translate(0 ${dy})`}>
+          <path d="M48 38 L60 8 L72 38 Z" fill="#9B7BF2" />
+          <path d="M52.8 26 L67.2 26 L65.6 30 L54.4 30 Z M57.6 14 L62.4 14 L61.6 18 L58.4 18 Z" fill="#FFE07A" />
+          <circle cx={60} cy={8} r={4.5} fill="#F2709C" className={animated ? "arena-twinkle" : undefined} />
+        </g>
+      );
+    case "beanie":
+      return (
+        <g transform={`translate(0 ${dy})`}>
+          <path d="M32 46 C32 22 88 22 88 46 Z" fill="#3D5A9E" />
+          <path d="M44 30 L44 44 M52 27 L52 44 M60 26 L60 44 M68 27 L68 44 M76 30 L76 44" stroke="#fff" strokeOpacity={0.15} strokeWidth={3} />
+          <rect x={30} y={41} width={60} height={9} rx={4.5} fill="#2C437A" />
+          <circle cx={60} cy={21} r={6} fill="#F4F4F8" />
+        </g>
+      );
+    case "flower":
+      return (
+        <g transform={`translate(80 ${40 + dy})`}>
+          {[0, 72, 144, 216, 288].map((a) => (
+            <circle key={a} cx={Math.cos((a * Math.PI) / 180) * 5} cy={Math.sin((a * Math.PI) / 180) * 5} r={4.2} fill="#FF8FB1" />
+          ))}
+          <circle r={3.2} fill="#FFD54F" />
+        </g>
+      );
+    case "headphones":
+      return (
+        <g>
+          <path d="M24 66 C24 22 96 22 96 66" stroke="#2B2140" strokeWidth={5} fill="none" strokeLinecap="round" />
+          <rect x={15} y={57} width={13} height={20} rx={6} fill="#F2709C" />
+          <rect x={92} y={57} width={13} height={20} rx={6} fill="#F2709C" />
+        </g>
+      );
+    default:
+      return null;
+  }
+}
+
+function FaceItem({ id }: { id: string }) {
+  if (id === "sunglasses") {
+    return (
+      <g>
+        <rect x={37} y={58} width={20} height={12} rx={5} fill="#1E2433" />
+        <rect x={63} y={58} width={20} height={12} rx={5} fill="#1E2433" />
+        <path d="M57 62 L63 62" stroke="#1E2433" strokeWidth={2.5} />
+        <path d="M40 61 L45 61 M66 61 L71 61" stroke="#fff" strokeOpacity={0.5} strokeWidth={1.6} strokeLinecap="round" />
+      </g>
+    );
+  }
+  if (id === "round") {
+    return (
+      <g stroke={INK} strokeWidth={2} fill="#fff" fillOpacity={0.12}>
+        <circle cx={47} cy={65} r={8.5} />
+        <circle cx={73} cy={65} r={8.5} />
+        <path d="M55.5 64 Q60 61 64.5 64" fill="none" />
+      </g>
+    );
+  }
+  return null;
+}
+
+function NeckItem({ id }: { id: string }) {
+  if (id === "scarf") {
+    return (
+      <g>
+        <path d="M28 92 C44 102 76 102 92 92 L94 100 C76 111 44 111 26 100 Z" fill="#F97352" />
+        <path d="M74 100 L80 116 L88 114 L82 98 Z" fill="#D9502F" />
+        <path d="M34 98 L36 94 M46 102 L47 97 M58 104 L58 99 M70 103 L69 98" stroke="#fff" strokeOpacity={0.35} strokeWidth={2} strokeLinecap="round" />
+      </g>
+    );
+  }
+  if (id === "bow") {
+    return (
+      <g>
+        <path d="M60 99 L47 92 L47 106 Z" fill="#9B7BF2" />
+        <path d="M60 99 L73 92 L73 106 Z" fill="#9B7BF2" />
+        <circle cx={60} cy={99} r={3.5} fill="#7655D6" />
+      </g>
+    );
+  }
+  if (id === "medal") {
+    return (
+      <g>
+        <path d="M52 86 L60 100 L68 86" stroke="#4FA3F7" strokeWidth={4} fill="none" strokeLinejoin="round" />
+        <circle cx={60} cy={103} r={7} fill={GOLD} stroke="#E09A00" strokeWidth={1.2} />
+        <path d="M60 99 l1.3 2.6 2.9.4 -2.1 2 .5 2.9 -2.6 -1.4 -2.6 1.4 .5 -2.9 -2.1 -2 2.9 -.4 Z" fill="#fff" />
+      </g>
+    );
+  }
+  return null;
+}
+
+const BLOB ="M60 34 C86 34 98 52 98 74 C98 96 82 106 60 106 C38 106 22 96 22 74 C22 52 34 34 60 34 Z";
 
 export function Character({
   profile,
   mood = "normal",
-  level = 1,
   size = 96,
   animated = true,
   className,
@@ -64,6 +171,7 @@ export function Character({
   const uid = useId().replace(/:/g, "");
   const pal = PALETTES[profile.palette] ?? PALETTES.sky;
   const { species } = profile;
+  const outfit = profile.outfit ?? {};
   const robot = species === "robot";
   const fill = `url(#body-${uid})`;
 
@@ -119,7 +227,7 @@ export function Character({
       case "robot":
         return (
           <>
-            {level < 8 && (
+            {!outfit.head && (
               <>
                 <path d="M60 38 L60 25" stroke={pal.shade} strokeWidth={3} strokeLinecap="round" />
                 <circle cx={60} cy={21} r={5} fill="#FFE07A" className={animated ? "arena-twinkle" : undefined} />
@@ -201,14 +309,9 @@ export function Character({
           <stop offset="0%" stopColor={pal.body} />
           <stop offset="100%" stopColor={pal.shade} />
         </linearGradient>
-        <radialGradient id={`aura-${uid}`}>
-          <stop offset="0%" stopColor={GOLD} stopOpacity={0.55} />
-          <stop offset="100%" stopColor={GOLD} stopOpacity={0} />
-        </radialGradient>
       </defs>
 
       <ellipse cx={60} cy={111} rx={28} ry={4} fill="#000" opacity={0.12} />
-      {level >= 12 && <circle cx={60} cy={68} r={58} fill={`url(#aura-${uid})`} />}
 
       <g className={animated ? "arena-bob" : undefined}>
         {ears}
@@ -223,34 +326,10 @@ export function Character({
         {mood === "tired" && (
           <path d="M92 40 Q97 48 92 52 Q87 48 92 40 Z" fill="#8FD3FF" stroke="#fff" strokeWidth={1} />
         )}
-        {level >= 3 && (
-          <path
-            d="M84 90 l2.2 4.5 5 .7 -3.6 3.5 .9 5 -4.5 -2.4 -4.5 2.4 .9 -5 -3.6 -3.5 5 -.7 Z"
-            fill={GOLD}
-            stroke="#E09A00"
-            strokeWidth={0.8}
-          />
-        )}
-        {level >= 8 && (
-          <path
-            d={robot ? "M46 40 L44 26 L53 33 L60 22 L67 33 L76 26 L74 40 Z" : "M46 38 L44 24 L53 31 L60 20 L67 31 L76 24 L74 38 Z"}
-            fill={GOLD}
-            stroke="#E09A00"
-            strokeWidth={1.2}
-            strokeLinejoin="round"
-          />
-        )}
+        {outfit.neck && <NeckItem id={outfit.neck} />}
+        {outfit.face && <FaceItem id={outfit.face} />}
+        {outfit.head && <HeadItem id={outfit.head} robot={robot} animated={animated} />}
       </g>
-
-      {level >= 5 && (
-        <g fill={GOLD}>
-          <path className={animated ? "arena-twinkle" : undefined} d="M14 30 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2 Z" />
-          <path
-            className={animated ? "arena-twinkle arena-delay" : undefined}
-            d="M106 34 l1.5 4.5 4.5 1.5 -4.5 1.5 -1.5 4.5 -1.5 -4.5 -4.5 -1.5 4.5 -1.5 Z"
-          />
-        </g>
-      )}
     </svg>
   );
 }
