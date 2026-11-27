@@ -35,12 +35,14 @@ export type ChecklistItem = {
   isChecked: boolean;
 };
 
-type PlannerTask = {
+export type PlannerTask = {
   id: string;
   title: string;
   percentComplete?: number;
   dueDateTime?: string | null;
   bucketId?: string;
+  createdDateTime?: string | null;
+  completedDateTime?: string | null;
 };
 
 type ChecklistRaw = {
@@ -69,17 +71,17 @@ function jiraKey(title: string): string | null {
   return match?.[1] ?? null;
 }
 
-function personRank(name: string): number {
+export function personRank(name: string): number {
   const index = PERSON_ORDER.indexOf(name);
   return index === -1 ? PERSON_ORDER.length : index;
 }
 
-async function resolvePlanId(token: string): Promise<string> {
+export async function resolvePlanId(token: string): Promise<string> {
   if (ENV_PLAN_ID) return ENV_PLAN_ID;
   throw new Error("MS_PLAN_ID тохируулаагүй байна");
 }
 
-async function listTasks(token: string, planId: string): Promise<PlannerTask[]> {
+export async function listTasks(token: string, planId: string): Promise<PlannerTask[]> {
   const items: PlannerTask[] = [];
   let path: string | null = `/planner/plans/${planId}/tasks`;
   while (path) {
